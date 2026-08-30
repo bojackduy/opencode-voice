@@ -27,8 +27,8 @@
 //   /tts-stop            - stop playback                   (default: <leader>; , also palette)
 //   /tts-voice           - select TTS voice
 //   All also palette-accessible via Ctrl+P or /slash. Override via plugin options `keybinds`:
-//   { "keybinds": { "stt.record": "<leader>R", "tts.speak-last": "none" } }
-//   Weird keys [ ] ; were chosen because opencode doesn't use them and uppercase/shift was ignored.
+//   { "keybinds": { "stt.record": "ctrl+r", "tts.speak-last": "none" } }
+//   Weird keys [ ] ; were chosen because opencode doesn't use them and shift variants were ignored in terminals.
 
 import fs from "node:fs";
 import os from "node:os";
