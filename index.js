@@ -15,17 +15,18 @@
 //
 // Runtime state (model, mic, voice, tts mode) persisted via api.kv.
 //
-// Commands:
-//   /stt-record (ctrl+r)  - start/stop recording + transcribe
-//   /stt-submit (leader+r)- stop recording + transcribe + submit
-//   /stt-stop             - cancel recording
-//   /stt-model            - select whisper model
-//   /stt-language         - select transcription language
-//   /stt-mic              - select microphone
-//   /tts-speak (leader+s)- read last response aloud
-//   /tts-mode (leader+v) - toggle auto TTS on/off
-//   /tts-stop (escape)   - stop playback
+// Commands (palette + slash, no default keybind — set via plugin options `keybinds` if needed):
+//   /stt-record          - start/stop recording + transcribe
+//   /stt-submit          - stop recording + transcribe + submit
+//   /stt-stop            - cancel recording
+//   /stt-model           - select whisper model
+//   /stt-language        - select transcription language
+//   /stt-mic             - select microphone
+//   /tts-speak           - read last response aloud
+//   /tts-mode            - toggle auto TTS on/off
+//   /tts-stop            - stop playback
 //   /tts-voice           - select TTS voice
+//   Example keybinds: { "keybinds": { "stt.record": "ctrl+r", "tts.speak-last": "<leader>s" } }
 
 import fs from "node:fs";
 import os from "node:os";
@@ -66,7 +67,7 @@ export default {
     };
 
     const sttCommands = registerSTT(api, kv, complete, prompts, options, logger);
-    const ttsCommands = registerTTS(api, kv, complete, prompts, logger);
+    const ttsCommands = registerTTS(api, kv, complete, prompts, options, logger);
 
     api.command.register(() => [...sttCommands, ...ttsCommands]);
   },
