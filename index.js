@@ -15,18 +15,20 @@
 //
 // Runtime state (model, mic, voice, tts mode) persisted via api.kv.
 //
-// Commands (palette + slash, no default keybind — set via plugin options `keybinds` if needed):
-//   /stt-record          - start/stop recording + transcribe
-//   /stt-submit          - stop recording + transcribe + submit
-//   /stt-stop            - cancel recording
+// Commands (palette + slash; default shortcuts use rare leader combos to avoid collisions):
+//   /stt-record          - start/stop recording + transcribe  (default: <leader>[ = ctrl+x, [)
+//   /stt-submit          - stop recording + transcribe + submit (palette-only)
+//   /stt-stop            - cancel recording (palette-only)
 //   /stt-model           - select whisper model
 //   /stt-language        - select transcription language
 //   /stt-mic             - select microphone
-//   /tts-speak           - read last response aloud
-//   /tts-mode            - toggle auto TTS on/off
-//   /tts-stop            - stop playback
+//   /tts-speak           - read last response aloud        (default: <leader>] = ctrl+x, ])
+//   /tts-mode            - toggle auto TTS on/off (palette-only)
+//   /tts-stop            - stop playback                   (default: <leader>; , also palette)
 //   /tts-voice           - select TTS voice
-//   Example keybinds: { "keybinds": { "stt.record": "ctrl+r", "tts.speak-last": "<leader>s" } }
+//   All also palette-accessible via Ctrl+P or /slash. Override via plugin options `keybinds`:
+//   { "keybinds": { "stt.record": "<leader>R", "tts.speak-last": "none" } }
+//   Weird keys [ ] ; were chosen because opencode doesn't use them and uppercase/shift was ignored.
 
 import fs from "node:fs";
 import os from "node:os";
