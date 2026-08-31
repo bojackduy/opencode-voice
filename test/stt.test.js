@@ -6,11 +6,35 @@ import {
   buildOpenRouterTranscriptionRequest,
   buildRecordArgs,
   buildWhisperArgs,
+  insertIntoFocusedInput,
   isOpenRouterEndpoint,
   isWSL,
   parsePactlSources,
   parsePactlSourcesShort,
 } from "../lib/stt.js";
+
+test("inserts transcription into the focused OpenTUI input", () => {
+  const calls = [];
+  const input = {
+    insertText(text) {
+      calls.push(["insert", text]);
+    },
+    submit() {
+      calls.push(["submit"]);
+    },
+  };
+
+  assert.equal(insertIntoFocusedInput({ currentFocusedRenderable: input }, "hello", true), true);
+  assert.deepEqual(calls, [["insert", "hello"], ["submit"]]);
+});
+
+test("does not claim non-editable focused renderables", () => {
+  assert.equal(
+    insertIntoFocusedInput({ currentFocusedRenderable: { focus() {} } }, "hello"),
+    false,
+  );
+  assert.equal(insertIntoFocusedInput({ currentFocusedRenderable: null }, "hello"), false);
+});
 
 test("detects OpenRouter STT endpoints", () => {
   assert.equal(isOpenRouterEndpoint("https://openrouter.ai/api/v1"), true);
