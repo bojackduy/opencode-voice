@@ -60,7 +60,12 @@ export default {
     const { kv } = api;
     const logger = createLogger(api.client);
     logger.log("plugin", "Initializing", "debug");
-    const { complete } = createClient(options, logger);
+    // Session-scoped gateways (opencode.ai/zen/go) require x-opencode-session.
+    // Read the live route at call time so normalize works in any session.
+    const { complete } = createClient(options, logger, () => {
+      const route = api?.route?.current;
+      return route?.name === "session" ? route?.params?.sessionID : undefined;
+    });
 
     const prompts = {
       stt: loadPromptFile(options?.sttPrompt, logger, "STT"),

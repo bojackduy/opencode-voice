@@ -264,3 +264,63 @@ test("retries transient failures and eventually returns the response text", asyn
     }
   }
 });
+
+test("sends x-opencode-session header from session resolver", async () => {
+  const previousFetch = globalThis.fetch;
+  const requests = [];
+
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, options });
+    return createJsonResponse(200, { output_text: "normalized text" });
+  };
+
+  try {
+    const client = createClient(
+      {
+        endpoint: "https://example.test/v1",
+        model: "test-model",
+        useResponsesApi: true,
+        retries: 0,
+      },
+      undefined,
+      () => "ses_test123",
+    );
+
+    const result = await client.complete({ prompt: "User prompt" });
+
+    assert.equal(result.text, "normalized text");
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, "https://example.test/v1/responses");
+    assert.equal(requests[0].options.headers["x-opencode-session"], "ses_test123");
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("omits x-opencode-session header without session", async () => {
+  const previousFetch = globalThis.fetch;
+  const requests = [];
+
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, options });
+    return createJsonResponse(200, {
+      choices: [{ message: { content: "text" } }],
+    });
+  };
+
+  try {
+    const client = createClient({
+      endpoint: "https://example.test/v1",
+      model: "test-model",
+      retries: 0,
+    });
+
+    const result = await client.complete({ prompt: "User prompt" });
+
+    assert.equal(result.text, "text");
+    assert.equal(requests.length, 1);
+    assert.ok(!("x-opencode-session" in requests[0].options.headers));
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
