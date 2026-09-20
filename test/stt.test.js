@@ -2,15 +2,21 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  __clearProcessingToastState,
+  __setProcessingToastFn,
   buildAudioHint,
   buildOpenRouterTranscriptionRequest,
   buildRecordArgs,
   buildWhisperArgs,
+  clearProcessingToast,
   insertIntoFocusedInput,
   isOpenRouterEndpoint,
+  isProcessingToastActive,
   isWSL,
   parsePactlSources,
   parsePactlSourcesShort,
+  showProcessingToast,
+  updateProcessingToast,
 } from "../lib/stt.js";
 
 test("inserts transcription into the focused OpenTUI input", () => {
@@ -34,6 +40,26 @@ test("does not claim non-editable focused renderables", () => {
     false,
   );
   assert.equal(insertIntoFocusedInput({ currentFocusedRenderable: null }, "hello"), false);
+});
+
+test("processing toast stays active until cleared", () => {
+  const seen = [];
+  __setProcessingToastFn((input) => seen.push(input));
+  try {
+    showProcessingToast("Transcribing...");
+    assert.equal(isProcessingToastActive(), true);
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].message, "Transcribing...");
+
+    updateProcessingToast("Normalizing...");
+    assert.equal(isProcessingToastActive(), true);
+    assert.equal(seen.at(-1).message, "Normalizing...");
+
+    clearProcessingToast();
+    assert.equal(isProcessingToastActive(), false);
+  } finally {
+    __clearProcessingToastState();
+  }
 });
 
 test("detects OpenRouter STT endpoints", () => {
