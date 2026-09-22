@@ -26,14 +26,18 @@
 //   /tts-mode            - toggle auto TTS on/off (palette-only)
 //   /tts-stop            - stop playback                   (default: <leader>; , also palette)
 //   /tts-voice           - select TTS voice
+//   /voice-conversation  - toggle hands-free voice conversation (default: <leader>v = ctrl+x, v)
+//   /voice-conversation-stop - exit voice conversation mode (palette-only)
 //   All also palette-accessible via Ctrl+P or /slash. Override via plugin options `keybinds`:
-//   { "keybinds": { "stt.record": "ctrl+r", "tts.speak-last": "none" } }
+//   { "keybinds": { "stt.record": "ctrl+r", "tts.speak-last": "none", "voice.conversation": "none" } }
 //   Weird keys [ ] ; were chosen because opencode doesn't use them and shift variants were ignored in terminals.
+//   <leader>v is free in opencode defaults (c/e/s/m/a/y/u/r/h etc. are taken) and mnemonic for voice.
 
 import fs from "node:fs";
 import os from "node:os";
 import { registerSTT } from "./lib/stt.js";
 import { registerTTS } from "./lib/tts.js";
+import { registerConversation } from "./lib/conversation.js";
 import { createClient } from "./lib/llm-client.js";
 import { createLogger } from "./lib/logger.js";
 
@@ -73,9 +77,18 @@ export default {
       ttsManual: loadPromptFile(options?.ttsManualPrompt, logger, "TTS manual"),
     };
 
-    const sttCommands = registerSTT(api, kv, complete, prompts, options, logger);
-    const ttsCommands = registerTTS(api, kv, complete, prompts, options, logger);
+    const shared = {};
+    const stt = registerSTT(api, kv, complete, prompts, options, logger, {
+      isConversationActive: () => shared.conversation?.isActive() === true,
+      onConversationKey: (source) => shared.conversation?.onKey(source),
+    });
+    const tts = registerTTS(api, kv, complete, prompts, options, logger);
+    const conversation = registerConversation(api, options, logger, {
+      stt: stt.controller,
+      tts: tts.controller,
+    });
+    shared.conversation = conversation.controller;
 
-    api.command.register(() => [...sttCommands, ...ttsCommands]);
+    api.command.register(() => [...stt.commands, ...tts.commands, ...conversation.commands]);
   },
 };

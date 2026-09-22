@@ -334,6 +334,8 @@ up or how responses are spoken.
 }
 ```
 
+- `sttContextMessages` _(optional)_ - recent turns sent as knowledge with STT normalization (default `8`)
+- `sttContextChars` _(optional)_ - max chars of that context (default `3000`, tail kept)
 - `sttPrompt` _(optional)_ - system prompt for cleaning up whisper transcriptions
 - `ttsAutoPrompt` _(optional)_ - system prompt for auto-speaking assistant responses
 - `ttsManualPrompt` _(optional)_ - system prompt for manually reading responses aloud
@@ -369,9 +371,35 @@ then `s`.
 | Command      | Keybind    | Description              |
 | ------------ | ---------- | ------------------------ |
 | `/tts-speak` | `leader+s` | Read last response aloud |
-| `/tts-mode`  | `leader+v` | Toggle auto TTS on/off   |
+| `/tts-mode`  |            | Toggle auto TTS on/off   |
 | `/tts-stop`  | `escape`   | Stop playback            |
 | `/tts-voice` |            | Select TTS voice         |
+
+### Voice conversation
+
+| Command                    | Keybind    | Description                               |
+| -------------------------- | ---------- | ----------------------------------------- |
+| `/voice-conversation`      | `leader+v` | Toggle hands-free voice conversation mode |
+| `/voice-conversation-stop` |            | Exit voice conversation mode              |
+
+Press the conversation key to enter the mode, speak, then press again to
+send. The turn is transcribed, normalized, submitted immediately, the reply
+is waited on and spoken aloud, and recording restarts automatically:
+
+```
+record -> transcribe -> normalize -> submit -> wait reply -> speak -> record ...
+```
+
+While the reply is speaking, press the key to barge in (stop speech, record
+the next turn). While waiting/processing, the key exits the mode. Saying a
+stop phrase (`stop`, `goodbye`, `dừng lại`, ...) ends the mode without
+submitting. While the mode is on, the plain `/stt-record` keys finish the
+current turn and auto TTS stays silent (the loop speaks the reply itself).
+
+Options: `conversationMaxTurns` (default `50`), `conversationTimeoutMs`
+(default `300000`), `conversationRestartDelayMs` (default `350`),
+`conversationStopPhrases` (custom stop-phrase list). Keybind override:
+`"keybinds": { "voice.conversation": "none" }`.
 
 ## How it works
 
