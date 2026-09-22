@@ -17,9 +17,18 @@ test("matches exact stop phrases only", () => {
   assert.equal(matchesStopPhrase("goodbye!"), true);
 });
 
+test("matches stuttered and padded stop commands", () => {
+  assert.equal(matchesStopPhrase("stop stop"), true);
+  assert.equal(matchesStopPhrase("stop stop stopping"), true);
+  assert.equal(matchesStopPhrase("please stop the conversation now"), true);
+  assert.equal(matchesStopPhrase("dừng lại đi"), true);
+  assert.equal(matchesStopPhrase("thôi"), true);
+});
+
 test("does not match speech containing stop words", () => {
   assert.equal(matchesStopPhrase("please stop the server"), false);
   assert.equal(matchesStopPhrase("do not stop"), false);
+  assert.equal(matchesStopPhrase("stop the deployment right now please sir"), false);
   assert.equal(matchesStopPhrase(""), false);
   assert.equal(matchesStopPhrase(null), false);
 });
