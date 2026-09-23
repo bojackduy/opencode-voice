@@ -216,7 +216,8 @@ pip install piper-tts
 
 The plugin looks for `piper` on your `PATH` (`~/.local/bin` is typically on `PATH`).
 
-Download a voice model to `~/.local/share/piper-voices/`:
+Download voice models to `~/.local/share/piper-voices/` (English + Vietnamese
+for mixed-language replies):
 
 ```bash
 mkdir -p ~/.local/share/piper-voices
@@ -224,7 +225,23 @@ curl -L -o ~/.local/share/piper-voices/en_US-ryan-high.onnx \
   https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/high/en_US-ryan-high.onnx
 curl -L -o ~/.local/share/piper-voices/en_US-ryan-high.onnx.json \
   https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/high/en_US-ryan-high.onnx.json
+curl -L -o ~/.local/share/piper-voices/vi_VN-vais1000-medium.onnx \
+  https://huggingface.co/rhasspy/piper-voices/resolve/main/vi/vi_VN/vais1000/medium/vi_VN-vais1000-medium.onnx
+curl -L -o ~/.local/share/piper-voices/vi_VN-vais1000-medium.onnx.json \
+  https://huggingface.co/rhasspy/piper-voices/resolve/main/vi/vi_VN/vais1000/medium/vi_VN-vais1000-medium.onnx.json
 ```
+
+### Vietnamese/English voice selection
+
+Each call to speak (one full reply, or one sentence during conversation
+streaming) picks a single voice for the whole thing - no mid-utterance
+switching, since splicing separately synthesized clips sounds jarring.
+The language is decided by majority vote over words: text is routed to the
+Vietnamese voice only when a meaningful share of its words carry Vietnamese
+diacritics, so a single stray Vietnamese word (e.g. a name) in an otherwise
+English reply no longer flips the whole thing to the Vietnamese voice, and
+vice versa. Toneless Vietnamese (no diacritics) still reads as English -
+that is not distinguishable from English by this heuristic.
 
 ### LLM endpoint
 
@@ -418,6 +435,15 @@ submit normally. `/tts-stop` pauses a speaking reply; `/voice-conversation-stop`
 exits from anywhere. While the mode is on, the plain `/stt-record` keys act
 as the conversation key and auto TTS stays silent (the loop speaks the reply
 itself).
+
+While waiting, assistant text is spoken sentence by sentence as it streams in
+(local cleanup, no LLM), so the answer starts before the agent turn finishes.
+Code-like sentences are skipped; replies with nothing streamable fall back to
+the full narrated speak. Pressing the key mid-stream exits the mode.
+
+- `ttsNormalizeMode` _(optional)_ - `"llm"` (default, polished narration) or
+  `"local"` (instant deterministic cleanup, no network). Streaming speech
+  always uses the local path.
 
 Options: `conversationMaxTurns` (default `50`), `conversationTimeoutMs`
 (default `300000`), `conversationRestartDelayMs` (default `350`),

@@ -53,6 +53,7 @@ const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
 function makeHarness({ transcribe = { text: "hello" } } = {}) {
   const toasts = [];
   const handlers = {};
+  const stateData = { messages: [], parts: {} };
   const api = {
     ui: { toast: (input) => toasts.push(input?.message ?? input) },
     route: { current: { name: "session", params: { sessionID: "s1" } } },
@@ -62,9 +63,20 @@ function makeHarness({ transcribe = { text: "hello" } } = {}) {
         return () => {};
       },
     },
+    state: {
+      session: { messages: () => stateData.messages },
+      part: (messageID) => stateData.parts[messageID] || [],
+    },
     lifecycle: {},
   };
-  const calls = { sttStart: 0, ttsStop: 0, speakTurn: 0, submitted: [] };
+  const calls = {
+    sttStart: 0,
+    ttsStop: 0,
+    speakTurn: 0,
+    speakFull: 0,
+    speakCalls: [],
+    submitted: [],
+  };
   let speakGate = null;
   const stt = {
     isRecording: () => false,
@@ -86,9 +98,12 @@ function makeHarness({ transcribe = { text: "hello" } } = {}) {
     },
   };
   const tts = {
-    speak: async () => {},
+    speak: async (text) => {
+      calls.speakCalls.push(text);
+    },
     speakAssistantTurn: async () => {
       calls.speakTurn += 1;
+      calls.speakFull += 1;
       if (speakGate) await speakGate;
       return { spoken: true };
     },
@@ -110,6 +125,7 @@ function makeHarness({ transcribe = { text: "hello" } } = {}) {
     toasts,
     handlers,
     calls,
+    stateData,
     controller,
     setSpeakGate: (p) => {
       speakGate = p;
@@ -195,6 +211,44 @@ test("exit during processing cancels the turn", async () => {
   resolveTranscribe({ text: "late hello" });
   await tick(20);
   assert.deepEqual(h.calls.submitted, []);
+});
+
+test("streams reply deltas while waiting, skips full speak", async () => {
+  const h = makeHarness();
+  h.controller.onKey("toggle");
+  h.controller.onKey("toggle");
+  await tick(30);
+  h.stateData.messages.push({ id: "a1", role: "assistant", time: { created: Date.now() } });
+  h.stateData.parts["a1"] = [
+    { id: "p1", type: "text", text: "" },
+    { id: "p2", type: "reasoning", text: "" },
+  ];
+  const delta = (partID, text) => ({
+    properties: { sessionID: "s1", messageID: "a1", partID, field: "text", delta: text },
+  });
+  for (const handler of h.handlers["message.part.delta"] || []) {
+    handler(delta("p1", "Hello world. How are "));
+    handler(delta("p2", "secret thinking"));
+    handler(delta("p1", "you?"));
+  }
+  await tick(20);
+  assert.deepEqual(h.calls.speakCalls, ["Hello world.", "How are you?"]);
+  fireIdle(h.handlers);
+  await tick(30);
+  assert.equal(h.calls.speakFull, 0);
+  assert.equal(h.calls.sttStart, 2);
+});
+
+test("falls back to full speak when nothing streamable arrives", async () => {
+  const h = makeHarness();
+  h.controller.onKey("toggle");
+  h.controller.onKey("toggle");
+  await tick(30);
+  fireIdle(h.handlers);
+  await tick(30);
+  assert.equal(h.calls.speakFull, 1);
+  assert.equal(h.calls.sttStart, 2);
+  h.controller.stop("test");
 });
 
 test("tts stop key pauses speaking, ignored when inactive", async () => {
