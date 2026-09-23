@@ -38,6 +38,7 @@ import os from "node:os";
 import { registerSTT } from "./lib/stt.js";
 import { registerTTS } from "./lib/tts.js";
 import { registerConversation } from "./lib/conversation.js";
+import { registerVoiceModel, resolveVoiceProviderModel } from "./lib/voice-model.js";
 import { createClient } from "./lib/llm-client.js";
 import { createLogger } from "./lib/logger.js";
 
@@ -66,10 +67,17 @@ export default {
     logger.log("plugin", "Initializing", "debug");
     // Session-scoped gateways (opencode.ai/zen/go) require x-opencode-session.
     // Read the live route at call time so normalize works in any session.
-    const { complete } = createClient(options, logger, () => {
-      const route = api?.route?.current;
-      return route?.name === "session" ? route?.params?.sessionID : undefined;
-    });
+    // The voice-selected provider (/voice-model) fills endpoint/model only
+    // when the explicit options leave them out.
+    const { complete } = createClient(
+      options,
+      logger,
+      () => {
+        const route = api?.route?.current;
+        return route?.name === "session" ? route?.params?.sessionID : undefined;
+      },
+      () => resolveVoiceProviderModel(api, kv),
+    );
 
     const prompts = {
       stt: loadPromptFile(options?.sttPrompt, logger, "STT"),
@@ -91,7 +99,13 @@ export default {
       tts: tts.controller,
     });
     shared.conversation = conversation.controller;
+    const voiceModel = registerVoiceModel(api, kv, options, logger);
 
-    api.command.register(() => [...stt.commands, ...tts.commands, ...conversation.commands]);
+    api.command.register(() => [
+      ...stt.commands,
+      ...tts.commands,
+      ...conversation.commands,
+      ...voiceModel.commands,
+    ]);
   },
 };

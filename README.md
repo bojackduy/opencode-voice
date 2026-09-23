@@ -313,6 +313,20 @@ plugin on a machine without whisper-cpp installed.
 
 OpenRouter note: when `sttEndpoint` points at `https://openrouter.ai/api/v1`, the plugin automatically uses OpenRouter's JSON/base64 transcription request format instead of multipart upload.
 
+### Voice LLM selection
+
+Instead of hand-editing `endpoint`/`model` in `tui.json`, run `/voice-model`
+(palette group `opencode-voice`) to pick from OpenCode's own provider catalog
+— the same providers you connected in OpenCode, no file editing:
+
+- The selection (`voice.providerID` + `voice.modelID` in kv) fills in whatever
+  `endpoint`/`model`/`apiKeyEnv` the plugin options leave out. Explicit
+  options always win; `/voice-model-clear` goes back to options-only.
+- Only env-key providers work (key read live from the provider's env list,
+  e.g. `OPENROUTER_API_KEY`). OAuth/Console-managed credentials are invisible
+  to plugins — for those, keep explicit `endpoint` options.
+- The picker warns when no key is exported yet.
+
 ### Custom prompts
 
 The LLM system prompts used for normalization can be fully replaced by pointing
@@ -337,6 +351,7 @@ up or how responses are spoken.
 - `sttContextMessages` _(optional)_ - recent turns sent as knowledge with STT normalization (default `8`)
 - `sttContextChars` _(optional)_ - max chars of that context (default `3000`, tail kept)
 - `sttNormalizeTimeoutMs` _(optional)_ - worst-case budget per normalize call, raw transcript used on timeout (default `15000`)
+- `sttAutoSubmit` _(optional)_ - one-shot `/stt-record` submits immediately instead of appending for edit (default `false`; conversation mode always submits)
 - `sttPrompt` _(optional)_ - system prompt for cleaning up whisper transcriptions
 - `ttsAutoPrompt` _(optional)_ - system prompt for auto-speaking assistant responses
 - `ttsManualPrompt` _(optional)_ - system prompt for manually reading responses aloud

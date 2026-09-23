@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createClient } from "../lib/llm-client.js";
+import { createClient, resolveProviderConfig } from "../lib/llm-client.js";
 
 function createJsonResponse(status, data) {
   return {
@@ -292,6 +292,94 @@ test("sends x-opencode-session header from session resolver", async () => {
     assert.equal(requests.length, 1);
     assert.equal(requests[0].url, "https://example.test/v1/responses");
     assert.equal(requests[0].options.headers["x-opencode-session"], "ses_test123");
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("resolves voice-selected provider to endpoint config", () => {
+  const provider = {
+    id: "openrouter",
+    name: "OpenRouter",
+    env: ["OPENROUTER_API_KEY"],
+    options: { baseURL: "https://openrouter.ai/api/v1" },
+  };
+  const model = { id: "openai/gpt-4o-mini", api: { url: "https://openrouter.ai/api/v1" } };
+  assert.deepEqual(resolveProviderConfig(provider, model), {
+    endpoint: "https://openrouter.ai/api/v1",
+    model: "openai/gpt-4o-mini",
+    apiKeyEnv: "OPENROUTER_API_KEY",
+  });
+  assert.equal(resolveProviderConfig(null, model), null);
+});
+
+test("falls back to model api url when provider has no baseURL", () => {
+  const provider = { id: "custom", env: [], options: {} };
+  const model = { id: "m1", api: { url: "https://llm.test/v1" } };
+  const resolved = resolveProviderConfig(provider, model);
+  assert.equal(resolved.endpoint, "https://llm.test/v1");
+  assert.equal(resolved.apiKeyEnv, null);
+});
+
+test("uses voice-selected provider when explicit options are missing", async () => {
+  const previousFetch = globalThis.fetch;
+  const previousKey = process.env.VOICE_TEST_KEY;
+  const requests = [];
+  process.env.VOICE_TEST_KEY = "secret";
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, options });
+    return createJsonResponse(200, {
+      choices: [{ message: { content: "ok" } }],
+    });
+  };
+
+  try {
+    const provider = {
+      id: "p1",
+      env: ["VOICE_TEST_KEY"],
+      options: { baseURL: "https://llm.test/v1" },
+    };
+    const model = { id: "fast-one", api: { url: "https://llm.test/v1" } };
+    const client = createClient({}, null, null, () => ({ provider, model }));
+    const result = await client.complete({ prompt: "hi" });
+    assert.equal(result.text, "ok");
+    assert.equal(requests[0].url, "https://llm.test/v1/chat/completions");
+    assert.equal(JSON.parse(requests[0].options.body).model, "fast-one");
+    assert.equal(requests[0].options.headers["Authorization"], "Bearer secret");
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousKey === undefined) delete process.env.VOICE_TEST_KEY;
+    else process.env.VOICE_TEST_KEY = previousKey;
+  }
+});
+
+test("explicit endpoint options win over voice-selected provider", async () => {
+  const previousFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, options });
+    return createJsonResponse(200, {
+      choices: [{ message: { content: "ok" } }],
+    });
+  };
+
+  try {
+    const provider = {
+      id: "p1",
+      env: [],
+      options: { baseURL: "https://provider.test/v1" },
+    };
+    const model = { id: "provider-model", api: { url: "https://provider.test/v1" } };
+    const client = createClient(
+      { endpoint: "https://explicit.test/v1", model: "explicit-model", retries: 0 },
+      null,
+      null,
+      () => ({ provider, model }),
+    );
+    const result = await client.complete({ prompt: "hi" });
+    assert.equal(result.text, "ok");
+    assert.equal(requests[0].url, "https://explicit.test/v1/chat/completions");
+    assert.equal(JSON.parse(requests[0].options.body).model, "explicit-model");
   } finally {
     globalThis.fetch = previousFetch;
   }
