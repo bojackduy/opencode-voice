@@ -336,6 +336,7 @@ up or how responses are spoken.
 
 - `sttContextMessages` _(optional)_ - recent turns sent as knowledge with STT normalization (default `8`)
 - `sttContextChars` _(optional)_ - max chars of that context (default `3000`, tail kept)
+- `sttNormalizeTimeoutMs` _(optional)_ - worst-case budget per normalize call, raw transcript used on timeout (default `15000`)
 - `sttPrompt` _(optional)_ - system prompt for cleaning up whisper transcriptions
 - `ttsAutoPrompt` _(optional)_ - system prompt for auto-speaking assistant responses
 - `ttsManualPrompt` _(optional)_ - system prompt for manually reading responses aloud
@@ -382,19 +383,26 @@ then `s`.
 | `/voice-conversation`      | `leader+v` | Toggle hands-free voice conversation mode |
 | `/voice-conversation-stop` |            | Exit voice conversation mode              |
 
-Press the conversation key to enter the mode, speak, then press again to
-send. The turn is transcribed, normalized, submitted immediately, the reply
-is waited on and spoken aloud, and recording restarts automatically:
+One key drives the whole loop - its meaning follows the toast on screen:
 
 ```
 record -> transcribe -> normalize -> submit -> wait reply -> speak -> record ...
 ```
 
-While the reply is speaking, press the key to barge in (stop speech, record
-the next turn). While waiting/processing, the key exits the mode. Saying a
-stop phrase (`stop`, `goodbye`, `dừng lại`, ...) ends the mode without
-submitting. While the mode is on, the plain `/stt-record` keys finish the
-current turn and auto TTS stays silent (the loop speaks the reply itself).
+| Toast shows               | Pressing the key does                |
+| ------------------------- | ------------------------------------ |
+| ● Recording               | Finish the turn and submit           |
+| Speaking...               | Pause speech (press again to record) |
+| Paused                    | Record again                         |
+| Waiting / Transcribing... | Exit the mode                        |
+
+Empty or failed turns pause instead of re-recording, so the key never
+surprises. Saying only a stop phrase (`stop`, `stop stop`, `dừng lại đi`,
+...) ends the mode without submitting - full sentences mentioning stop still
+submit normally. `/tts-stop` pauses a speaking reply; `/voice-conversation-stop`
+exits from anywhere. While the mode is on, the plain `/stt-record` keys act
+as the conversation key and auto TTS stays silent (the loop speaks the reply
+itself).
 
 Options: `conversationMaxTurns` (default `50`), `conversationTimeoutMs`
 (default `300000`), `conversationRestartDelayMs` (default `350`),

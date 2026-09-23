@@ -13,11 +13,22 @@ import {
   isOpenRouterEndpoint,
   isProcessingToastActive,
   isWSL,
+  needsContext,
   parsePactlSources,
   parsePactlSourcesShort,
   showProcessingToast,
   updateProcessingToast,
 } from "../lib/stt.js";
+
+test("detects transcripts that need conversation context", () => {
+  assert.equal(needsContext("ask him about it"), true);
+  assert.equal(needsContext("Cristina đi đâu?"), true);
+  assert.equal(needsContext("fix this file"), true);
+  assert.equal(needsContext("run the tests"), false);
+  assert.equal(needsContext("mở file log"), false);
+  assert.equal(needsContext(""), false);
+  assert.equal(needsContext(null), false);
+});
 
 test("inserts transcription into the focused OpenTUI input", () => {
   const calls = [];

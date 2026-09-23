@@ -82,7 +82,10 @@ export default {
       isConversationActive: () => shared.conversation?.isActive() === true,
       onConversationKey: (source) => shared.conversation?.onKey(source),
     });
-    const tts = registerTTS(api, kv, complete, prompts, options, logger);
+    const tts = registerTTS(api, kv, complete, prompts, options, logger, {
+      isConversationActive: () => shared.conversation?.isActive() === true,
+      onConversationStopKey: () => shared.conversation?.onTtsStop() === true,
+    });
     const conversation = registerConversation(api, options, logger, {
       stt: stt.controller,
       tts: tts.controller,
