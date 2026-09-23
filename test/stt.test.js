@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   __clearProcessingToastState,
   __setProcessingToastFn,
+  STT_SYSTEM_PROMPT,
+  STT_SYSTEM_PROMPT_STRICT,
   buildAudioHint,
   buildOpenRouterTranscriptionRequest,
   buildRecordArgs,
@@ -16,9 +18,25 @@ import {
   needsContext,
   parsePactlSources,
   parsePactlSourcesShort,
+  selectSttSystemPrompt,
   showProcessingToast,
   updateProcessingToast,
 } from "../lib/stt.js";
+
+test("interpretive prompt reinterprets mishearings, strict does not", () => {
+  assert.match(STT_SYSTEM_PROMPT, /INTERPRET misheard words/);
+  assert.match(STT_SYSTEM_PROMPT, /they face/);
+  assert.match(STT_SYSTEM_PROMPT, /WORKFLOW VOCABULARY/);
+  assert.doesNotMatch(STT_SYSTEM_PROMPT_STRICT, /INTERPRET misheard words/);
+  assert.match(STT_SYSTEM_PROMPT_STRICT, /exactly what they said/);
+});
+
+test("selects normalize prompt by mode, custom file wins", () => {
+  assert.equal(selectSttSystemPrompt("strict", null), STT_SYSTEM_PROMPT_STRICT);
+  assert.equal(selectSttSystemPrompt("interpretive", null), STT_SYSTEM_PROMPT);
+  assert.equal(selectSttSystemPrompt(undefined, null), STT_SYSTEM_PROMPT);
+  assert.equal(selectSttSystemPrompt("strict", "custom"), "custom");
+});
 
 test("detects transcripts that need conversation context", () => {
   assert.equal(needsContext("ask him about it"), true);

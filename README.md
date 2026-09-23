@@ -368,6 +368,7 @@ up or how responses are spoken.
 - `sttContextMessages` _(optional)_ - recent turns sent as knowledge with STT normalization (default `8`)
 - `sttContextChars` _(optional)_ - max chars of that context (default `3000`, tail kept)
 - `sttNormalizeTimeoutMs` _(optional)_ - worst-case budget per normalize call, raw transcript used on timeout (default `15000`)
+- `sttNormalizeMode` _(optional)_ - `"interpretive"` (default: fix misheard words like "they face" → "database" using conversation context + workflow vocabulary) or `"strict"` (transcribe exactly, old behavior). A custom `sttPrompt` file overrides both.
 - `sttAutoSubmit` _(optional)_ - one-shot `/stt-record` submits immediately instead of appending for edit (default `false`; conversation mode always submits)
 - `sttPrompt` _(optional)_ - system prompt for cleaning up whisper transcriptions
 - `ttsAutoPrompt` _(optional)_ - system prompt for auto-speaking assistant responses
