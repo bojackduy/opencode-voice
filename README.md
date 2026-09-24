@@ -1,7 +1,7 @@
-[![CI](https://github.com/renjfk/opencode-voice/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/renjfk/opencode-voice/actions/workflows/ci.yml)
+[![CI](https://github.com/bojackduy/opencode-voice/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bojackduy/opencode-voice/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![npm](https://img.shields.io/npm/v/@renjfk/opencode-voice)](https://www.npmjs.com/package/@renjfk/opencode-voice)
-[![Downloads](https://img.shields.io/npm/dm/@renjfk/opencode-voice)](https://www.npmjs.com/package/@renjfk/opencode-voice)
+[![npm](https://img.shields.io/npm/v/@bojackduy/opencode-voice)](https://www.npmjs.com/package/@bojackduy/opencode-voice)
+[![Downloads](https://img.shields.io/npm/dm/@bojackduy/opencode-voice)](https://www.npmjs.com/package/@bojackduy/opencode-voice)
 
 # opencode-voice
 
@@ -32,7 +32,7 @@ exist). You must configure at least `endpoint` and `model`:
   },
   "plugin": [
     [
-      "@renjfk/opencode-voice",
+      "@bojackduy/opencode-voice",
       {
         "endpoint": "https://api.anthropic.com/v1",
         "model": "claude-haiku-4-5",
@@ -49,7 +49,7 @@ If OpenCode keeps using an older published version of the plugin after an
 update, clear the cached package and restart OpenCode:
 
 ```bash
-rm -rf ~/.cache/opencode/packages/@renjfk/
+rm -rf ~/.cache/opencode/packages/@bojackduy/
 ```
 
 ## Prerequisites
@@ -258,7 +258,7 @@ option is optional - omit it for unauthenticated endpoints like Ollama.
 {
   "plugin": [
     [
-      "@renjfk/opencode-voice",
+      "@bojackduy/opencode-voice",
       {
         "endpoint": "https://api.anthropic.com/v1",
         "model": "claude-haiku-4-5",
@@ -275,7 +275,7 @@ For unauthenticated local endpoints (e.g. Ollama):
 {
   "plugin": [
     [
-      "@renjfk/opencode-voice",
+      "@bojackduy/opencode-voice",
       {
         "endpoint": "http://localhost:11434/v1",
         "model": "llama3.2"
@@ -313,7 +313,7 @@ plugin on a machine without whisper-cpp installed.
 {
   "plugin": [
     [
-      "@renjfk/opencode-voice",
+      "@bojackduy/opencode-voice",
       {
         "sttEndpoint": "http://127.0.0.1:8000/v1",
         "sttModel": "whisper-large-v3-turbo",
@@ -354,7 +354,7 @@ up or how responses are spoken.
 {
   "plugin": [
     [
-      "@renjfk/opencode-voice",
+      "@bojackduy/opencode-voice",
       {
         "sttPrompt": "~/.config/opencode/stt-prompt.md",
         "ttsAutoPrompt": "~/.config/opencode/tts-auto-prompt.md",
