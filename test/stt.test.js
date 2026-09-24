@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import {
   __clearProcessingToastState,
   __setProcessingToastFn,
+  NOTES_SYSTEM_PROMPT,
   STT_SYSTEM_PROMPT,
   STT_SYSTEM_PROMPT_STRICT,
   buildAudioHint,
@@ -11,15 +15,20 @@ import {
   buildRecordArgs,
   buildWhisperArgs,
   clearProcessingToast,
+  getSttApiConfig,
   insertIntoFocusedInput,
+  isLikelyWhisperHallucination,
   isOpenRouterEndpoint,
   isProcessingToastActive,
+  isSttBusy,
   isWSL,
   needsContext,
   parsePactlSources,
   parsePactlSourcesShort,
   selectSttSystemPrompt,
   showProcessingToast,
+  transcribeApiFile,
+  transcribeFileLocal,
   updateProcessingToast,
 } from "../lib/stt.js";
 
@@ -187,6 +196,84 @@ test("detects WSL via environment variables", () => {
     if (savedInterop === undefined) delete process.env.WSL_INTEROP;
     else process.env.WSL_INTEROP = savedInterop;
   }
+});
+
+test("live notes prompt stays close to input and never summarizes", () => {
+  assert.match(NOTES_SYSTEM_PROMPT, /not a summary/);
+  assert.match(NOTES_SYSTEM_PROMPT, /within ~20%/);
+  assert.doesNotMatch(NOTES_SYSTEM_PROMPT, /message to submit/);
+});
+
+test("detects likely whisper silence hallucinations", () => {
+  assert.equal(isLikelyWhisperHallucination("Thank you for watching!"), true);
+  assert.equal(isLikelyWhisperHallucination("[Music]"), true);
+  assert.equal(isLikelyWhisperHallucination("Please subscribe"), true);
+  assert.equal(isLikelyWhisperHallucination("Let's talk about the database schema."), false);
+  assert.equal(isLikelyWhisperHallucination(""), false);
+  assert.equal(isLikelyWhisperHallucination(null), false);
+});
+
+test("detects Vietnamese YouTube-outro hallucinations, even long ones", () => {
+  // Verbatim from a real classroom session: whisper "heard" this outro 7x
+  // on quiet far-field audio. At ~69 chars it used to slip past the old
+  // 60-char cap - it must be caught now.
+  assert.equal(
+    isLikelyWhisperHallucination(
+      "Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn",
+    ),
+    true,
+  );
+  assert.equal(
+    isLikelyWhisperHallucination("Các bạn hãy đăng ký kênh để ủng hộ kênh của mình nhé."),
+    true,
+  );
+  // But real lecture content stays: bare thanks could be the professor, and
+  // long genuine segments are never hallucinations.
+  assert.equal(isLikelyWhisperHallucination("Thank you."), false);
+  assert.equal(
+    isLikelyWhisperHallucination(
+      "Nội dung lớn nhất là nó liên quan đến những là Smart Kids, là các đồ vật thông minh. Nhưng mà nãy ta nói để làm cho một đồ vật trở nên thông minh thì chúng ta phải làm gì? Một đồ vật thông thường, ta phải khen vị cho ta phải làm gì? Và sau đó chúng ta còn phải thảo luận thêm rất nhiều nội dung khác nữa trong buổi học hôm nay.",
+    ),
+    false,
+  );
+});
+
+test("reports idle STT/API state before any recording starts", () => {
+  assert.equal(isSttBusy(), false);
+  assert.equal(getSttApiConfig(), null);
+});
+
+test("transcribeFileLocal reports missing model, missing file, and empty file", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "voice-stt-test-"));
+  try {
+    const missingModel = path.join(tmpDir, "missing.bin");
+    const wavFile = path.join(tmpDir, "chunk.wav");
+    fs.writeFileSync(wavFile, Buffer.alloc(100));
+
+    const noModel = await transcribeFileLocal(wavFile, missingModel, "en", null);
+    assert.match(noModel.error, /Model not found/);
+
+    fs.writeFileSync(missingModel, Buffer.alloc(4));
+    const noFile = await transcribeFileLocal(
+      path.join(tmpDir, "nope.wav"),
+      missingModel,
+      "en",
+      null,
+    );
+    assert.match(noFile.error, /No recording file/);
+
+    const emptyFile = path.join(tmpDir, "empty.wav");
+    fs.writeFileSync(emptyFile, Buffer.alloc(10));
+    const empty = await transcribeFileLocal(emptyFile, missingModel, "en", null);
+    assert.match(empty.error, /Recording is empty/);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("transcribeApiFile requires an endpoint and model", async () => {
+  const result = await transcribeApiFile("/tmp/whatever.wav", null, null, null, null);
+  assert.equal(result.error, "STT API not configured");
 });
 
 test("builds whisper-cli args with language", () => {

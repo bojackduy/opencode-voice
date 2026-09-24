@@ -451,6 +451,96 @@ Options: `conversationMaxTurns` (default `50`), `conversationTimeoutMs`
 `conversationStopPhrases` (custom stop-phrase list). Keybind override:
 `"keybinds": { "voice.conversation": "none" }`.
 
+### Live voice notes
+
+Continuous meeting/lecture transcription: the mic stays on and keeps
+recording while a background lane transcribes and cleans up what was already
+said, so a 30-minute meeting never blocks on waiting for whisper or the LLM.
+
+| Command               | Description                                               |
+| --------------------- | --------------------------------------------------------- |
+| `/voice-notes-start`  | Start continuous recording with background transcription  |
+| `/voice-notes-stop`   | Stop, flush the last bit of audio, and wait for the save  |
+| `/voice-notes-cancel` | Stop capturing immediately; finishes saving in background |
+| `/voice-notes-status` | Show elapsed time, chunks written/queued, and write lag   |
+
+No default keybind (palette/slash only, to avoid clashing with one-shot STT
+or conversation mode - only one of the three can be active at a time).
+
+Output goes to `voice-notes/<date>-<time>-notes.md` in your workspace (a
+custom title becomes the file name via `notesTitle`, and `notesDir` moves the
+folder). Two files are written per session:
+
+- `<name>.md` - the readable, cleaned transcript with `[HH:MM:SS]` timestamps
+- `<name>.raw.jsonl` - one JSON line per chunk with the raw whisper text,
+  normalized text, and timings, for recovery if a normalization pass
+  hallucinated
+
+Recording is split into chunks on natural pauses (silence-aware), with a
+forced cut every 20 seconds during continuous speech so processing never
+falls more than ~20s behind. A forced cut carries a short audio overlap into
+the next chunk so a word is never fully lost mid-cut; the writer removes the
+duplicated words from the merged transcript automatically.
+
+For local whisper transcription, live notes starts a persistent
+`whisper-server` process (loads the model once) instead of the one-shot
+`whisper-cli` path (which reloads the model - and would fall behind - on
+every chunk). If `whisper-server` isn't installed or fails to start, it
+falls back to per-chunk `whisper-cli` automatically. The `sttEndpoint` API
+option, model, and language are reused from one-shot STT settings.
+
+Far-field voices (a professor meters from the mic) are enhanced before
+whisper hears them: each chunk is measured and gained up to a healthy speech
+level with `sox` (`highpass 80` for room rumble + adaptive `gain -l` with the
+limiter on, so quiet speech gets louder and loud speech is untouched). The
+per-chunk levels land in the JSONL sidecar (`audio.rmsBefore/rmsAfter/gainDb`)
+so you can see what the room actually sounded like. Silence detection also
+learns the room: the first ~1.5s of mic audio sets the speech/silence
+threshold instead of assuming one value fits every room.
+
+Whisper hallucinates YouTube outros on quiet audio ("Hãy subscribe cho kênh
+...", "thank you for watching") - those are filtered by phrase (English +
+Vietnamese), and any transcript that repeats verbatim 3x in a row is treated
+as a repeat hallucination. Filtered chunks stay in the JSONL sidecar but never
+reach the readable transcript.
+
+Classroom tip: the LLM cleanup pass is slow over a network gateway and adds
+lag per chunk - for lectures set `notesNormalize: false` (raw whisper text,
+still enhanced + filtered) and clean up afterwards.
+
+Options:
+
+- `notesDir` _(optional, default `"voice-notes"`)_ - output folder, relative
+  to the workspace unless absolute
+- `notesTitle` _(optional)_ - included in the session file name
+- `notesChunkMaxSeconds` _(optional, default `20`)_ - forced cut duration
+- `notesMinChunkSeconds` _(optional, default `3`)_ - minimum audio before a
+  natural (silence-triggered) cut is allowed
+- `notesSilenceMs` _(optional, default `700`)_ - pause length that closes a
+  chunk naturally
+- `notesOverlapMs` _(optional, default `400`)_ - audio overlap carried across
+  a forced cut
+- `notesNormalize` _(optional, default `true`)_ - set `false` to skip the LLM
+  cleanup pass and write raw whisper text only
+- `notesKeepAudio` _(optional, default `false`)_ - keep each transcribed
+  chunk's WAV file under `<name>-audio/` instead of deleting it
+- `notesUseWhisperServer` _(optional, default `true`)_ - set `false` to force
+  per-chunk `whisper-cli` even when `whisper-server` is available
+- `notesEnhance` _(optional, default `true`)_ - voice-only preprocessing
+  (adaptive gain + rumble filter) before whisper; set `false` if the mic is
+  already close/loud
+- `notesEnhanceTargetRms` _(optional, default `0.1`)_ - speech level chunks
+  are gained up to
+- `notesEnhanceMaxGainDb` _(optional, default `24`)_ - gain ceiling so
+  near-silence never becomes amplified noise
+- `notesSilenceRms` _(optional)_ - explicit speech/silence RMS threshold,
+  disables room auto-calibration when set
+- `notesCalibrationMs` _(optional, default `1500`)_ - mic audio used to learn
+  the room noise floor at session start; set `0` to disable
+
+Not in v1: speaker diarization, automatic summaries/action items, and
+uploading the notes anywhere - the Markdown file stays local.
+
 ## How it works
 
 ### STT pipeline

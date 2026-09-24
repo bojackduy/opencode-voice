@@ -28,6 +28,10 @@
 //   /tts-voice           - select TTS voice
 //   /voice-conversation  - toggle hands-free voice conversation (default: <leader>v = ctrl+x, v)
 //   /voice-conversation-stop - exit voice conversation mode (palette-only)
+//   /voice-notes-start   - start continuous live-notes recording (palette-only)
+//   /voice-notes-stop    - stop live notes, flush, and save (palette-only)
+//   /voice-notes-cancel  - stop live notes immediately, save in background (palette-only)
+//   /voice-notes-status  - show live-notes recording status (palette-only)
 //   All also palette-accessible via Ctrl+P or /slash. Override via plugin options `keybinds`:
 //   { "keybinds": { "stt.record": "ctrl+r", "tts.speak-last": "none", "voice.conversation": "none" } }
 //   Weird keys [ ] ; were chosen because opencode doesn't use them and shift variants were ignored in terminals.
@@ -38,6 +42,7 @@ import os from "node:os";
 import { registerSTT } from "./lib/stt.js";
 import { registerTTS } from "./lib/tts.js";
 import { registerConversation } from "./lib/conversation.js";
+import { registerLiveNotes } from "./lib/live-notes.js";
 import { registerVoiceModel, resolveVoiceProviderModel } from "./lib/voice-model.js";
 import { createClient } from "./lib/llm-client.js";
 import { createLogger } from "./lib/logger.js";
@@ -89,6 +94,7 @@ export default {
     const stt = registerSTT(api, kv, complete, prompts, options, logger, {
       isConversationActive: () => shared.conversation?.isActive() === true,
       onConversationKey: (source) => shared.conversation?.onKey(source),
+      isLiveNotesActive: () => shared.liveNotes?.isActive() === true,
     });
     const tts = registerTTS(api, kv, complete, prompts, options, logger, {
       isConversationActive: () => shared.conversation?.isActive() === true,
@@ -97,14 +103,21 @@ export default {
     const conversation = registerConversation(api, options, logger, {
       stt: stt.controller,
       tts: tts.controller,
+      isLiveNotesActive: () => shared.liveNotes?.isActive() === true,
     });
     shared.conversation = conversation.controller;
+    const liveNotes = registerLiveNotes(api, kv, complete, options, logger, {
+      tts: tts.controller,
+      isConversationActive: () => shared.conversation?.isActive() === true,
+    });
+    shared.liveNotes = liveNotes.controller;
     const voiceModel = registerVoiceModel(api, kv, options, logger);
 
     api.command.register(() => [
       ...stt.commands,
       ...tts.commands,
       ...conversation.commands,
+      ...liveNotes.commands,
       ...voiceModel.commands,
     ]);
   },
