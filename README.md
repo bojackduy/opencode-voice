@@ -497,6 +497,11 @@ every chunk). If `whisper-server` isn't installed or fails to start, it
 falls back to per-chunk `whisper-cli` automatically. The `sttEndpoint` API
 option, model, and language are reused from one-shot STT settings.
 
+Multi-TUI: each OpenCode window runs its own server — the first takes
+127.0.0.1:8090, the next window takes the next free port up (8091, ...).
+No configuration needed; each server loads its own model copy, so allow
+roughly 2 GB RAM per window.
+
 Far-field voices (a professor meters from the mic) are enhanced before
 whisper hears them: each chunk is measured and gained up to a healthy speech
 level with `sox` (`highpass 80` for room rumble + adaptive `gain -l` with the
@@ -563,22 +568,28 @@ per-utterance reload) and folded into stable + tentative text. No LLM is
 involved anywhere in the streaming path — raw whisper text only — so it
 costs zero quota and works fully offline once the model is downloaded.
 
-What you see: the OpenCode renderer only exposes `insertText`/`submit`,
-with no live range-replacement API, so partials render as preview toasts
-(`🎙 ...`) and the full text is inserted EXACTLY ONCE at finalize. If no
-editable field is focused, the transcript is kept via toast instead of
-being redirected into the chat. `/stt-submit` submits only through the
-dictated field's own `submit()` — a field that cannot submit keeps its
-text un-submitted rather than falling through to the primary chat.
-`/stt-stop` cancels and removes only plugin-dictated text, never your
-typed prefix/suffix.
+What you see: a sticky status toast stays up for the whole session so
+there is never a silent gap — `Loading speech model…` during cold start,
+`● Streaming dictation — listening` with an elapsed timer while live
+(plus a `(listening…)` note when inference runs slow), and `Finalizing…`
+between the second keypress and the insert. The OpenCode renderer only
+exposes `insertText`/`submit`, with no live range-replacement API, so
+partials render as preview toasts (`🎙 ...`) alongside (not instead of)
+the sticky status, and the full text is inserted EXACTLY ONCE at
+finalize. If no editable field is focused, the transcript is kept via
+toast instead of being redirected into the chat. `/stt-submit` submits
+only through the dictated field's own `submit()` — a field that cannot
+submit keeps its text un-submitted rather than falling through to the
+primary chat. `/stt-stop` cancels and removes only plugin-dictated
+text, never your typed prefix/suffix.
 
 Warm server: the whisper model stays loaded across dictations (finalize
 and cancel keep the lease); it reloads only on model/language change,
 plugin unload, or a proven server fault. If the server fails mid-stream,
 the error names the cause and the recorded audio is kept for a later
 batch run. Streaming refuses while batch recording, live notes, or voice
-conversation is active (and vice versa).
+conversation is active (and vice versa). Like live notes, streaming takes
+the next free port when 8090 is owned by another window (see above).
 
 Classroom/batch guidance: streaming is tuned for short dictations (prompt
 length, seconds to a few minutes). For lectures and meetings, use live
@@ -598,24 +609,26 @@ Measured latencies (Apple M3 Pro, 36 GB, whisper.cpp 1.9.4 with Metal,
 `ggml-large-v3-turbo-q5_0.bin`, scripted speech through the real
 `/inference` path — goals from the plan, measured here, not promises):
 
-| Measure                                                       | Measured                          |
-| ------------------------------------------------------------- | --------------------------------- |
-| Cold model-load to server ready                               | ~1.0–1.5 s                        |
-| First inference, cold server, 10 s window                     | ~0.9 s (≈1.9 s total after spawn) |
-| Warm 10 s-window transcribe (plain)                           | ~0.9 s                            |
-| Warm 10 s-window transcribe (streaming format, with segments) | ~1.7 s                            |
-| Stop-to-final, 2 s tail                                       | ~0.8 s                            |
+| Measure                                                                  | Measured                          |
+| ------------------------------------------------------------------------ | --------------------------------- |
+| Cold model-load to server ready                                          | ~1.0–1.5 s                        |
+| First inference, cold server, 10 s window                                | ~0.9 s (≈1.9 s total after spawn) |
+| Warm 10 s-window transcribe (plain)                                      | ~0.9 s                            |
+| Warm 10 s-window transcribe (verbose format, with segments; opt-in only) | ~1.7 s                            |
+| Stop-to-final, 2 s tail                                                  | ~0.8 s                            |
 
-Honest limitations: partials refresh at roughly the streaming-format
-transcribe time (~1.7 s per 10 s window on the hardware above), not every
-cadence tick — the scheduler coalesces while inference is busy, so
-partials are flicker-free but not instant. Only one smaller-model data
-point exists (none: no smaller model file is installed locally, and
-nothing was downloaded for measurement). E2E coverage is
-mic-less/TUI-less by necessity: session flows are proven through the real
-command paths with faked capture/renderer (`test/streaming-e2e.test.js`),
-while the numbers above come from the real server path with scripted
-audio — no live-mic session was measured.
+Honest limitations: ticks default to the plain format (~0.9 s per 10 s
+window on the hardware above, no segments fetched — the stability
+tracker is text-anchored and never reads segments), so partials refresh
+at roughly that rate, not every cadence tick — the scheduler coalesces
+while inference is busy, so partials are flicker-free but not instant.
+Only one smaller-model data point exists (none: no smaller model file is
+installed locally, and nothing was downloaded for measurement). E2E
+coverage is mic-less/TUI-less by necessity: session flows are proven
+through the real command paths with faked capture/renderer
+(`test/streaming-e2e.test.js`, `test/streaming-gaps.test.js`), while the
+numbers above come from the real server path with scripted audio — no
+live-mic session was measured.
 
 ## How it works
 

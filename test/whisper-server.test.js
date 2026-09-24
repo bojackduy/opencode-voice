@@ -384,3 +384,188 @@ test("shared servers refcount: one client, released only when all holders releas
     __clearSharedWhisperServersForTest();
   }
 });
+
+// ---- Multi-TUI port auto-advance: default path scans, explicit stays strict ----
+
+function portOf(url) {
+  const m = String(url).match(/:(\d+)(?:\/|$)/);
+  return m ? Number(m[1]) : 0;
+}
+
+async function withFakeWhisperBinary(fn) {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "voice-ws-test-"));
+  const saved = process.env.PATH;
+  try {
+    fs.writeFileSync(path.join(dir, "whisper-server"), "#!/bin/sh\n");
+    process.env.PATH = `${dir}${path.delimiter}${saved}`;
+    await fn();
+  } finally {
+    process.env.PATH = saved;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// Default-path client: no `port` passed, so start() scans upward from 8090.
+function autoClientWith({ fetch, procs, onSpawn, ...overrides } = {}) {
+  const spawnCalls = [];
+  const spawn =
+    procs === undefined
+      ? () => {
+          throw new Error("spawn should not have been called");
+        }
+      : (bin, args, opts) => {
+          spawnCalls.push({ bin, args, opts });
+          onSpawn?.();
+          const proc = procs.length > 0 ? procs.shift() : makeProc();
+          return proc;
+        };
+  const client = createWhisperServerClient({
+    modelPath: "/models/ggml.bin",
+    language: "en",
+    readyTimeoutMs: 500,
+    readyPollMs: 5,
+    deps: { spawn, fetch: fetch || (async () => connRefused()) },
+    ...overrides,
+  });
+  return { client, spawnCalls };
+}
+
+test("default path claims 8091 when 8090 already answers, getPort reports it", async () => {
+  await withFakeWhisperBinary(async () => {
+    const proc = makeProc(777);
+    let up8091 = false;
+    const fetch = makeFetch(async (url) => {
+      const p = portOf(url);
+      if (p === 8090) return statusOnly(200, "whisper.cpp"); // first TUI owns it
+      if (p === 8091) {
+        if (!up8091) return connRefused();
+        if (String(url).endsWith("/health")) return statusOnly(200);
+        return connRefused();
+      }
+      return connRefused();
+    });
+    const { client, spawnCalls } = autoClientWith({
+      fetch,
+      procs: [proc],
+      onSpawn: () => {
+        up8091 = true;
+      },
+    });
+    assert.equal(await client.start(), true);
+    assert.equal(client.getPort(), 8091);
+    assert.equal(spawnCalls.length, 1);
+    assert.ok(spawnCalls[0].args.includes("8091"));
+    client.stop();
+    assert.deepEqual(proc.killed, ["SIGTERM"]);
+  });
+});
+
+test("explicit port still refuses PORT_IN_USE and never scans", async () => {
+  await withFakeWhisperBinary(async () => {
+    const fetch = makeFetch(async () => statusOnly(200, "whisper.cpp"));
+    const { client, spawnCalls } = clientWith({ fetch }); // port 8090, explicit
+    assert.equal(await client.start(), false);
+    assert.equal(client.getLastError()?.code, "PORT_IN_USE");
+    assert.equal(client.getPort(), 8090);
+    assert.equal(spawnCalls.length, 0);
+    client.stop();
+  });
+});
+
+function makeRacingProc(pid) {
+  const p = makeProc(pid);
+  let dataHandler = null;
+  p.stderr = {
+    on(evt, fn) {
+      if (evt === "data") dataHandler = fn;
+    },
+  };
+  p.loseBindRace = () => {
+    dataHandler?.(Buffer.from("error: failed to bind to 127.0.0.1:8090 - Address already in use"));
+    p.emit("exit", 1);
+  };
+  return p;
+}
+
+test("bind race on 8090 advances to 8091 without killing anything foreign", async () => {
+  await withFakeWhisperBinary(async () => {
+    const raceProc = makeRacingProc(888);
+    const goodProc = makeProc(889);
+    let spawns = 0;
+    let up8091 = false;
+    let raceConsumed = false;
+    const fetch = makeFetch(async (url) => {
+      const p = portOf(url);
+      if (!spawns) return connRefused(); // pre-spawn probes: port is free
+      if (p === 8090 && spawns === 1 && !raceConsumed) {
+        raceConsumed = true;
+        raceProc.loseBindRace(); // sibling TUI won between probe and spawn
+        return connRefused();
+      }
+      if (p === 8091) {
+        if (!up8091) return connRefused();
+        if (String(url).endsWith("/health")) return statusOnly(200);
+        return connRefused();
+      }
+      return connRefused();
+    });
+    const { client, spawnCalls } = autoClientWith({
+      fetch,
+      procs: [raceProc, goodProc],
+      onSpawn: () => {
+        spawns += 1;
+        if (spawns === 2) up8091 = true;
+      },
+    });
+    assert.equal(await client.start(), true);
+    assert.equal(client.getPort(), 8091);
+    assert.equal(spawnCalls.length, 2);
+    assert.ok(spawnCalls[0].args.includes("8090"));
+    assert.ok(spawnCalls[1].args.includes("8091"));
+    // The race loser exited on its own; we never signaled it, and the
+    // foreign winner was never touched (only owned handles are signaled).
+    assert.deepEqual(raceProc.killed, []);
+    assert.deepEqual(goodProc.killed, []);
+    client.stop();
+    assert.deepEqual(goodProc.killed, ["SIGTERM"]);
+    assert.deepEqual(raceProc.killed, []);
+  });
+});
+
+test("exhausted range returns PORT_RANGE_EXHAUSTED without spawning", async () => {
+  await withFakeWhisperBinary(async () => {
+    const fetch = makeFetch(async () => statusOnly(200, "whisper.cpp"));
+    const { client, spawnCalls } = autoClientWith({ fetch, portScanMax: 3 });
+    assert.equal(await client.start(), false);
+    assert.equal(client.getLastError()?.code, "PORT_RANGE_EXHAUSTED");
+    assert.equal(spawnCalls.length, 0);
+    const r = await client.transcribeFile("/tmp/whatever.wav");
+    assert.equal(r.code, "PORT_RANGE_EXHAUSTED");
+    client.stop();
+  });
+});
+
+test("rendezvous keys: default coalesces, explicit ports differ, getPort reports", async () => {
+  __clearSharedWhisperServersForTest();
+  try {
+    const a = acquireSharedWhisperServer({ modelPath: "/m.bin", language: "en" });
+    const b = acquireSharedWhisperServer({ modelPath: "/m.bin", language: "en" });
+    assert.equal(a.client, b.client); // default path coalesces in-process
+    const c = acquireSharedWhisperServer({ modelPath: "/m.bin", language: "en", port: 8090 });
+    assert.notEqual(a.client, c.client); // explicit 8090 is a different entry
+    const d = acquireSharedWhisperServer({ modelPath: "/m.bin", language: "en", port: 8091 });
+    assert.notEqual(c.client, d.client); // bound ports differ per entry
+    assert.equal(a.client.getPort(), 8090); // pre-start default reports the base
+    assert.equal(c.client.getPort(), 8090);
+    assert.equal(d.client.getPort(), 8091);
+    a.release();
+    b.release();
+    c.release();
+    d.release();
+  } finally {
+    __clearSharedWhisperServersForTest();
+  }
+});

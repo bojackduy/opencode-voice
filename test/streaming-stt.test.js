@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createRollingPcmBuffer, createStreamingController } from "../lib/streaming-stt.js";
+import {
+  createRollingPcmBuffer,
+  createServerTranscriber,
+  createStreamingController,
+} from "../lib/streaming-stt.js";
 
 // ---- Fakes: manual clock, scripted capture/transcriber, no processes ----
 
@@ -760,6 +764,103 @@ test("fast inference: next tick keeps wall cadence from launch, not from decode"
   await flushAsync();
   assert.equal(h.tx.calls.length, 2);
   assert.deepEqual(h.clock.firedAt, [0, 1000]);
+  await h.controller.dispose();
+});
+
+test("tick format defaults to plain json (halved latency, no segments fetch)", async () => {
+  const calls = [];
+  const factory = () => ({
+    client: {
+      start: async () => true,
+      getPort: () => 8090,
+      async transcribeBuffer(_wav, opts) {
+        calls.push(opts?.responseFormat);
+        return { text: "hello" };
+      },
+    },
+    release() {},
+  });
+  const tx = createServerTranscriber({
+    modelPath: "/m.bin",
+    language: "en",
+    serverFactory: factory,
+  });
+  assert.equal((await tx.ensureReady()).ready, true);
+  const r = await tx.transcribe(Buffer.from("WAV:snap"));
+  assert.equal(r.text, "hello");
+  assert.deepEqual(calls, ["json"]);
+  assert.equal(tx.getResponseFormat(), "json");
+  assert.equal(tx.describe().responseFormat, "json");
+  tx.dispose();
+});
+
+test("unknown preferred format falls back to plain json", async () => {
+  const factory = () => ({
+    client: {
+      start: async () => true,
+      async transcribeBuffer(_wav, opts) {
+        return { text: `fmt=${opts?.responseFormat}` };
+      },
+    },
+    release() {},
+  });
+  const tx = createServerTranscriber({
+    modelPath: "/m.bin",
+    language: "en",
+    responseFormat: "bogus",
+    serverFactory: factory,
+  });
+  const r = await tx.transcribe(Buffer.from("WAV:snap"));
+  assert.equal(r.text, "fmt=json");
+  assert.equal(tx.getResponseFormat(), "json");
+  tx.dispose();
+});
+
+test("explicit verbose_json opt-in still downgrades once on old builds, then stays on json", async () => {
+  const calls = [];
+  let verboseAttempts = 0;
+  const factory = () => ({
+    client: {
+      start: async () => true,
+      async transcribeBuffer(_wav, opts) {
+        calls.push(opts?.responseFormat);
+        if (opts?.responseFormat === "verbose_json" && verboseAttempts++ === 0) {
+          return { error: "unsupported response_format", code: "BAD_STATUS" };
+        }
+        return { text: "hi" };
+      },
+    },
+    release() {},
+  });
+  const tx = createServerTranscriber({
+    modelPath: "/m.bin",
+    language: "en",
+    responseFormat: "verbose_json",
+    serverFactory: factory,
+  });
+  const first = await tx.transcribe(Buffer.from("WAV:snap"));
+  assert.equal(first.text, "hi");
+  assert.deepEqual(calls, ["verbose_json", "json"]);
+  assert.equal(tx.getResponseFormat(), "json");
+  const second = await tx.transcribe(Buffer.from("WAV:snap"));
+  assert.equal(second.text, "hi");
+  assert.deepEqual(calls, ["verbose_json", "json", "json"]);
+  tx.dispose();
+});
+
+test("commit decisions never depend on segments (jittered segments ignored)", async () => {
+  const h = createHarness({ script: [{ text: "placeholder" }] });
+  h.tx.transcribe = () =>
+    Promise.resolve({
+      text: "hello world",
+      segments: [{ id: 0, start: 9.9, end: 10.1, text: "bogus tail" }],
+    });
+  await startAndSettle(h);
+  h.clock.fireNext();
+  await flushAsync();
+  const last = h.events.partials.at(-1);
+  assert.ok((`${last.stableText} ${last.tentativeText}`.trim() || "").includes("hello world"));
+  assert.doesNotMatch(`${last.stableText} ${last.tentativeText}`, /bogus/);
   await h.controller.dispose();
 });
 

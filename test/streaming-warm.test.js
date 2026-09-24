@@ -227,6 +227,13 @@ test("streamModelKey separates model and language", () => {
   assert.notEqual(streamModelKey("/a.bin", "en"), streamModelKey("/a.bin", "zh"));
 });
 
+test("streamModelKey distinguishes bound ports, omitting the port keeps the legacy form", () => {
+  assert.equal(streamModelKey("/a.bin", "en", 8090), "/a.bin::en::8090");
+  assert.notEqual(streamModelKey("/a.bin", "en", 8090), streamModelKey("/a.bin", "en", 8091));
+  assert.equal(streamModelKey("/a.bin", "en", undefined), "/a.bin::en");
+  assert.equal(streamModelKey("/a.bin", "en", null), "/a.bin::en");
+});
+
 test("stt.js session layer retains the lease and disposes only on server-fault/unload/model-change", () => {
   const src = fs.readFileSync(path.join(import.meta.dirname, "..", "lib", "stt.js"), "utf-8");
   const finIdx = src.indexOf("async function finalizeStreamingDictation");
