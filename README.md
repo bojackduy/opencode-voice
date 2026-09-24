@@ -370,6 +370,9 @@ up or how responses are spoken.
 - `sttNormalizeTimeoutMs` _(optional)_ - worst-case budget per normalize call, raw transcript used on timeout (default `15000`)
 - `sttNormalizeMode` _(optional)_ - `"interpretive"` (default: fix misheard words like "they face" → "database" using conversation context + workflow vocabulary) or `"strict"` (transcribe exactly, old behavior). A custom `sttPrompt` file overrides both.
 - `sttAutoSubmit` _(optional)_ - one-shot `/stt-record` submits immediately instead of appending for edit (default `false`; conversation mode always submits)
+- `sttMode` _(optional)_ - `"batch"` (default: record-then-transcribe as today) or `"streaming"` (live local dictation, see below)
+- `sttStreamWindowMs` _(optional)_ - rolling audio window per live transcription (default `10000`)
+- `sttStreamStepMs` _(optional)_ - live transcription cadence in ms (default `1000`)
 - `sttPrompt` _(optional)_ - system prompt for cleaning up whisper transcriptions
 - `ttsAutoPrompt` _(optional)_ - system prompt for auto-speaking assistant responses
 - `ttsManualPrompt` _(optional)_ - system prompt for manually reading responses aloud
@@ -396,6 +399,11 @@ device listing, "System default" uses sox's default device (`sox -d`).
 `/stt-language` offers a curated list of common languages (plus auto-detect)
 and only affects local `whisper-cli` transcription, not the STT API. Languages
 outside the list can be set via the `sttLanguage` plugin option.
+
+In `streaming` mode (`sttMode: "streaming"`), `/stt-record` toggles
+start/finalize of a live dictation session instead of one-shot recording
+(see "Streaming dictation" below); `/stt-submit` finalizes and submits via
+the dictated field only; `/stt-stop` cancels and removes only dictated text.
 
 ### Text-to-speech
 
@@ -540,6 +548,74 @@ Options:
 
 Not in v1: speaker diarization, automatic summaries/action items, and
 uploading the notes anywhere - the Markdown file stays local.
+
+### Streaming dictation
+
+Live local dictation for short prompts: the mic stays on, partial
+transcriptions stream in as you speak, and one press of `/stt-record`
+finalizes the text into the prompt box. Set `"sttMode": "streaming"` in the
+plugin options (default `"batch"` keeps the record-then-transcribe flow
+exactly as before).
+
+How it works: a rolling audio window (default 10 s, every 1 s) is
+transcribed by a persistent local `whisper-server` (model loaded once, no
+per-utterance reload) and folded into stable + tentative text. No LLM is
+involved anywhere in the streaming path — raw whisper text only — so it
+costs zero quota and works fully offline once the model is downloaded.
+
+What you see: the OpenCode renderer only exposes `insertText`/`submit`,
+with no live range-replacement API, so partials render as preview toasts
+(`🎙 ...`) and the full text is inserted EXACTLY ONCE at finalize. If no
+editable field is focused, the transcript is kept via toast instead of
+being redirected into the chat. `/stt-submit` submits only through the
+dictated field's own `submit()` — a field that cannot submit keeps its
+text un-submitted rather than falling through to the primary chat.
+`/stt-stop` cancels and removes only plugin-dictated text, never your
+typed prefix/suffix.
+
+Warm server: the whisper model stays loaded across dictations (finalize
+and cancel keep the lease); it reloads only on model/language change,
+plugin unload, or a proven server fault. If the server fails mid-stream,
+the error names the cause and the recorded audio is kept for a later
+batch run. Streaming refuses while batch recording, live notes, or voice
+conversation is active (and vice versa).
+
+Classroom/batch guidance: streaming is tuned for short dictations (prompt
+length, seconds to a few minutes). For lectures and meetings, use live
+voice notes instead — its chunked pipeline, overlap handling, and raw
+JSONL sidecar are built for 30-minute sessions, while streaming keeps at
+most ~5 minutes of bounded spool audio per session.
+
+Options:
+
+- `sttMode` _(optional, default `"batch"`)_ - `"streaming"` selects this mode
+- `sttStreamWindowMs` _(optional, default `10000`)_ - rolling audio window
+- `sttStreamStepMs` _(optional, default `1000`)_ - live transcription cadence
+- `sttAutoSubmit` applies after streaming finalize (submit via the dictated
+  field only, as above)
+
+Measured latencies (Apple M3 Pro, 36 GB, whisper.cpp 1.9.4 with Metal,
+`ggml-large-v3-turbo-q5_0.bin`, scripted speech through the real
+`/inference` path — goals from the plan, measured here, not promises):
+
+| Measure                                                       | Measured                          |
+| ------------------------------------------------------------- | --------------------------------- |
+| Cold model-load to server ready                               | ~1.0–1.5 s                        |
+| First inference, cold server, 10 s window                     | ~0.9 s (≈1.9 s total after spawn) |
+| Warm 10 s-window transcribe (plain)                           | ~0.9 s                            |
+| Warm 10 s-window transcribe (streaming format, with segments) | ~1.7 s                            |
+| Stop-to-final, 2 s tail                                       | ~0.8 s                            |
+
+Honest limitations: partials refresh at roughly the streaming-format
+transcribe time (~1.7 s per 10 s window on the hardware above), not every
+cadence tick — the scheduler coalesces while inference is busy, so
+partials are flicker-free but not instant. Only one smaller-model data
+point exists (none: no smaller model file is installed locally, and
+nothing was downloaded for measurement). E2E coverage is
+mic-less/TUI-less by necessity: session flows are proven through the real
+command paths with faked capture/renderer (`test/streaming-e2e.test.js`),
+while the numbers above come from the real server path with scripted
+audio — no live-mic session was measured.
 
 ## How it works
 
