@@ -50,7 +50,7 @@ test("default list covers both languages", () => {
 
 const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
 
-function makeHarness({ transcribe = { text: "hello" } } = {}) {
+function makeHarness({ transcribe = { text: "hello" }, opts = {} } = {}) {
   const toasts = [];
   const handlers = {};
   const stateData = { messages: [], parts: {} };
@@ -78,6 +78,7 @@ function makeHarness({ transcribe = { text: "hello" } } = {}) {
     submitted: [],
   };
   let speakGate = null;
+  let speakWordGate = null;
   const stt = {
     isRecording: () => false,
     isProcessing: () => false,
@@ -99,6 +100,7 @@ function makeHarness({ transcribe = { text: "hello" } } = {}) {
   };
   const tts = {
     speak: async (text) => {
+      if (speakWordGate) await speakWordGate;
       calls.speakCalls.push(text);
     },
     speakAssistantTurn: async () => {
@@ -116,7 +118,7 @@ function makeHarness({ transcribe = { text: "hello" } } = {}) {
   };
   const { controller } = registerConversation(
     api,
-    { conversationTimeoutMs: 60, conversationRestartDelayMs: 5 },
+    { conversationTimeoutMs: 60, conversationRestartDelayMs: 5, ...opts },
     null,
     { stt, tts },
   );
@@ -129,6 +131,9 @@ function makeHarness({ transcribe = { text: "hello" } } = {}) {
     controller,
     setSpeakGate: (p) => {
       speakGate = p;
+    },
+    setSpeakWordGate: (p) => {
+      speakWordGate = p;
     },
   };
 }
@@ -266,5 +271,68 @@ test("tts stop key pauses speaking, ignored when inactive", async () => {
   release();
   await tick(20);
   assert.equal(h.calls.sttStart, 1);
+  h.controller.stop("test");
+});
+
+test("explicit default list would kill the lenient vocabulary", () => {
+  // Documents WHY registerConversation must keep undefined for defaults:
+  // passing DEFAULT_STOP_PHRASES explicitly selects exact-only matching.
+  assert.equal(matchesStopPhrase("stop stop", undefined), true);
+  assert.equal(matchesStopPhrase("dừng lại đi", undefined), true);
+  assert.equal(matchesStopPhrase("stop stop", DEFAULT_STOP_PHRASES), false);
+  assert.equal(matchesStopPhrase("dừng lại đi", DEFAULT_STOP_PHRASES), false);
+});
+
+test("default registration exits on stuttered stop instead of submitting", async () => {
+  const h = makeHarness({ transcribe: { text: "stop stop" } });
+  h.controller.onKey("toggle");
+  h.controller.onKey("toggle");
+  await tick(30);
+  assert.deepEqual(h.calls.submitted, []);
+  assert.ok(h.toasts.includes("Conversation off"));
+  h.controller.stop("test");
+});
+
+test("custom stop phrases take full control with exact matching", async () => {
+  const h = makeHarness({
+    transcribe: { text: "stop stop" },
+    opts: { conversationStopPhrases: ["halt"] },
+  });
+  h.controller.onKey("toggle");
+  h.controller.onKey("toggle");
+  await tick(30);
+  // "stop stop" is not the custom list: submitted, not exited.
+  assert.deepEqual(h.calls.submitted, ["stop stop"]);
+  h.controller.stop("test");
+});
+
+test("queued sentences still drain after the turn flips to speaking", async () => {
+  const h = makeHarness();
+  let releaseSpeak;
+  h.setSpeakWordGate(new Promise((r) => (releaseSpeak = r)));
+  h.controller.onKey("toggle");
+  h.controller.onKey("toggle");
+  await tick(30);
+  h.stateData.messages.push({ id: "a1", role: "assistant", time: { created: Date.now() } });
+  h.stateData.parts["a1"] = [{ id: "p1", type: "text", text: "" }];
+  for (const handler of h.handlers["message.part.delta"] || []) {
+    handler({
+      properties: {
+        sessionID: "s1",
+        messageID: "a1",
+        partID: "p1",
+        field: "text",
+        delta: "Hello world. ",
+      },
+    });
+  }
+  await tick(20);
+  // Real TTS latency: the first sentence is still speaking when the turn
+  // finishes and flips to speaking before the tail flush.
+  fireIdle(h.handlers);
+  await tick(20);
+  releaseSpeak();
+  await tick(30);
+  assert.ok(h.calls.speakCalls.includes("Hello world."));
   h.controller.stop("test");
 });

@@ -12,6 +12,7 @@ import {
   createNotesWriter,
   formatClockTime,
   mergeOverlapText,
+  resolveUniqueBaseName,
 } from "../lib/notes-writer.js";
 
 test("formats clock time as HH:MM:SS, including past an hour", () => {
@@ -59,9 +60,61 @@ test("builds one JSON line per record", () => {
 });
 
 test("builds a slugified session base name from a start time and optional title", () => {
-  const d = new Date(2026, 8, 24, 14, 30); // local time, month is 0-indexed
-  assert.equal(buildSessionBaseName(d), "2026-09-24-1430-notes");
-  assert.equal(buildSessionBaseName(d, "Sprint Planning!"), "2026-09-24-1430-sprint-planning");
+  const d = new Date(2026, 8, 24, 14, 30, 5); // local time, month is 0-indexed
+  assert.equal(buildSessionBaseName(d), "2026-09-24-143005-notes");
+  assert.equal(buildSessionBaseName(d, "Sprint Planning!"), "2026-09-24-143005-sprint-planning");
+});
+
+test("session basenames carry second resolution so same-minute sessions differ", () => {
+  const a = buildSessionBaseName(new Date(2026, 8, 24, 14, 30, 5));
+  const b = buildSessionBaseName(new Date(2026, 8, 24, 14, 30, 47));
+  assert.notEqual(a, b);
+});
+
+test("resolveUniqueBaseName disambiguates a taken basename", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "voice-notes-test-"));
+  try {
+    assert.equal(resolveUniqueBaseName(dir, "2026-09-24-143005-notes"), "2026-09-24-143005-notes");
+    fs.writeFileSync(path.join(dir, "2026-09-24-143005-notes.md"), "# taken\n");
+    assert.equal(
+      resolveUniqueBaseName(dir, "2026-09-24-143005-notes"),
+      "2026-09-24-143005-notes-2",
+    );
+    fs.writeFileSync(path.join(dir, "2026-09-24-143005-notes-2.raw.jsonl"), "");
+    assert.equal(
+      resolveUniqueBaseName(dir, "2026-09-24-143005-notes"),
+      "2026-09-24-143005-notes-3",
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("two writers with the same basename never share one file pair", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "voice-notes-test-"));
+  try {
+    const common = {
+      dir,
+      baseName: "2026-09-24-143005-notes",
+      startedAt: "2026-09-24T14:30:05.000Z",
+      language: "en",
+      model: "m",
+    };
+    const first = createNotesWriter(common);
+    const second = createNotesWriter(common);
+    assert.notEqual(first.mdPath, second.mdPath);
+    assert.notEqual(first.jsonlPath, second.jsonlPath);
+    first.appendChunk({ seq: 0, startMs: 0, endMs: 1000, forced: false, normalized: "one" });
+    second.appendChunk({ seq: 0, startMs: 0, endMs: 1000, forced: false, normalized: "two" });
+    const a = await first.close();
+    const b = await second.close();
+    assert.match(fs.readFileSync(a.mdPath, "utf-8"), /\bone\b/);
+    assert.doesNotMatch(fs.readFileSync(a.mdPath, "utf-8"), /\btwo\b/);
+    assert.match(fs.readFileSync(b.mdPath, "utf-8"), /\btwo\b/);
+    assert.doesNotMatch(fs.readFileSync(b.mdPath, "utf-8"), /\bone\b/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("notes writer appends strictly in sequence order even when chunks arrive out of order", async () => {

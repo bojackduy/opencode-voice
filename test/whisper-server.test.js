@@ -569,3 +569,52 @@ test("rendezvous keys: default coalesces, explicit ports differ, getPort reports
     __clearSharedWhisperServersForTest();
   }
 });
+
+test("late exit/error from a replaced child never wipes the new handle", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "voice-ws-test-"));
+  const saved = process.env.PATH;
+  try {
+    fs.writeFileSync(path.join(dir, "whisper-server"), "#!/bin/sh\n");
+    process.env.PATH = `${dir}${path.delimiter}${saved}`;
+    let up = false;
+    const fetch = makeFetch(async (url) => {
+      if (!up) return connRefused();
+      if (url.endsWith("/health")) return statusOnly(200);
+      return connRefused();
+    });
+    const oldProc = makeProc(501);
+    const newProc = makeProc(502);
+    const { client } = clientWith({
+      fetch,
+      procs: [oldProc, newProc],
+      onSpawn: () => {
+        up = true;
+      },
+    });
+    assert.equal(await client.start(), true);
+    assert.equal(client.getOwnerPid(), 501);
+    client.stop();
+    assert.equal(client.isRunning(), false);
+    assert.deepEqual(oldProc.killed, ["SIGTERM"]);
+    up = false;
+    assert.equal(await client.start(), true);
+    assert.equal(client.getOwnerPid(), 502);
+    // The old child reports late (after the restart): must be ignored so
+    // the new handle stays ready and stoppable.
+    oldProc.emit("exit", 1);
+    assert.equal(client.isRunning(), true);
+    assert.equal(client.getOwnerPid(), 502);
+    oldProc.emit("error", new Error("stale EPIPE"));
+    assert.equal(client.isRunning(), true);
+    assert.equal(client.getOwnerPid(), 502);
+    assert.deepEqual(newProc.killed, []);
+    client.stop();
+    assert.deepEqual(newProc.killed, ["SIGTERM"]);
+  } finally {
+    process.env.PATH = saved;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

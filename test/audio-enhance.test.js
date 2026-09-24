@@ -70,40 +70,66 @@ test("buildEnhanceArgs strips rumble then applies limited gain", () => {
   assert.deepEqual(buildEnhanceArgs(17.3), ["highpass", "80", "gain", "-l", "17.3"]);
 });
 
-test("enhanceWavFile lifts a quiet tone to the target level", { skip: !soxAvailable() }, () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "enhance-"));
-  const wavPath = path.join(dir, "quiet.wav");
-  const pcm = sinePcm(0.02, 1000);
-  fs.writeFileSync(wavPath, wrapPcmAsWav(pcm, { sampleRate: SAMPLE_RATE }));
+test(
+  "enhanceWavFile lifts a quiet tone to the target level",
+  { skip: !soxAvailable() },
+  async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "enhance-"));
+    const wavPath = path.join(dir, "quiet.wav");
+    const pcm = sinePcm(0.02, 1000);
+    fs.writeFileSync(wavPath, wrapPcmAsWav(pcm, { sampleRate: SAMPLE_RATE }));
 
-  const stats = enhanceWavFile(wavPath, pcm, { targetRms: 0.1, maxGainDb: 24 });
-  assert.equal(stats.enhanced, true);
-  assert.ok(stats.gainDb > 10 && stats.gainDb <= 24, `gainDb=${stats.gainDb}`);
-  assert.ok(
-    Math.abs(stats.rmsAfter - 0.1) < 0.03,
-    `rmsAfter=${stats.rmsAfter} (before=${stats.rmsBefore})`,
+    const stats = await enhanceWavFile(wavPath, pcm, { targetRms: 0.1, maxGainDb: 24 });
+    assert.equal(stats.enhanced, true);
+    assert.ok(stats.gainDb > 10 && stats.gainDb <= 24, `gainDb=${stats.gainDb}`);
+    assert.ok(
+      Math.abs(stats.rmsAfter - 0.1) < 0.03,
+      `rmsAfter=${stats.rmsAfter} (before=${stats.rmsBefore})`,
+    );
+    assert.ok(stats.peakAfter <= 1);
+    fs.rmSync(dir, { recursive: true, force: true });
+  },
+);
+
+test("enhanceWavFile is async and never blocks on spawnSync", async () => {
+  // Regression: the sync spawnSync stalled the shared event loop (and the
+  // live-capture stdout drain). The fast paths must return a real promise.
+  const maybe = enhanceWavFile("/nonexistent.wav", Buffer.alloc(32000), {});
+  assert.equal(typeof maybe?.then, "function");
+  const stats = await maybe;
+  assert.equal(stats.enhanced, false);
+  assert.equal(stats.reason, "too-quiet");
+});
+
+test("enhanceWavFile module uses async spawn only", () => {
+  const src = fs.readFileSync(
+    path.join(import.meta.dirname, "..", "lib", "audio-enhance.js"),
+    "utf-8",
   );
-  assert.ok(stats.peakAfter <= 1);
-  fs.rmSync(dir, { recursive: true, force: true });
+  assert.doesNotMatch(src, /spawnSync/);
 });
 
-test("enhanceWavFile leaves loud audio and silence untouched", { skip: !soxAvailable() }, () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "enhance-"));
+test(
+  "enhanceWavFile leaves loud audio and silence untouched",
+  { skip: !soxAvailable() },
+  async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "enhance-"));
 
-  const loudPath = path.join(dir, "loud.wav");
-  const loudPcm = sinePcm(0.4, 500);
-  fs.writeFileSync(loudPath, wrapPcmAsWav(loudPcm, { sampleRate: SAMPLE_RATE }));
-  const before = fs.readFileSync(loudPath);
-  const loud = enhanceWavFile(loudPath, loudPcm, {});
-  assert.equal(loud.enhanced, false);
-  assert.equal(loud.reason, "already-loud");
-  assert.deepEqual(fs.readFileSync(loudPath), before);
+    const loudPath = path.join(dir, "loud.wav");
+    const loudPcm = sinePcm(0.4, 500);
+    fs.writeFileSync(loudPath, wrapPcmAsWav(loudPcm, { sampleRate: SAMPLE_RATE }));
+    const before = fs.readFileSync(loudPath);
+    const loud = await enhanceWavFile(loudPath, loudPcm, {});
+    assert.equal(loud.enhanced, false);
+    assert.equal(loud.reason, "already-loud");
+    assert.deepEqual(fs.readFileSync(loudPath), before);
 
-  const quietPath = path.join(dir, "silence.wav");
-  const silencePcm = Buffer.alloc(32000);
-  fs.writeFileSync(quietPath, wrapPcmAsWav(silencePcm, { sampleRate: SAMPLE_RATE }));
-  const silence = enhanceWavFile(quietPath, silencePcm, {});
-  assert.equal(silence.enhanced, false);
-  assert.equal(silence.reason, "too-quiet");
-  fs.rmSync(dir, { recursive: true, force: true });
-});
+    const quietPath = path.join(dir, "silence.wav");
+    const silencePcm = Buffer.alloc(32000);
+    fs.writeFileSync(quietPath, wrapPcmAsWav(silencePcm, { sampleRate: SAMPLE_RATE }));
+    const silence = await enhanceWavFile(quietPath, silencePcm, {});
+    assert.equal(silence.enhanced, false);
+    assert.equal(silence.reason, "too-quiet");
+    fs.rmSync(dir, { recursive: true, force: true });
+  },
+);

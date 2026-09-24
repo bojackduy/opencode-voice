@@ -83,6 +83,21 @@ test("streaming finalize never falls through to primary-chat append", () => {
   assert.match(finalizeSrc, /target\.submit/);
 });
 
+test("streaming finalize honors the owned range and targets the captured field", () => {
+  const src = fs.readFileSync(path.join(import.meta.dirname, "..", "lib", "stt.js"), "utf-8");
+  const finalizeIdx = src.indexOf("finalizeStreamingDictation");
+  assert.ok(finalizeIdx >= 0);
+  const finalizeSrc = src.slice(finalizeIdx, finalizeIdx + 8000);
+  // editor.finalize already writes live-capable targets: its result decides
+  // whether the single insert runs, otherwise every live dictation inserts
+  // twice.
+  assert.match(finalizeSrc, /editor\?\.finalize/);
+  assert.match(finalizeSrc, /fin\?\.inserted/);
+  // Fallback insert routes through the captured target, never the live focus.
+  assert.match(finalizeSrc, /target\.insertText/);
+  assert.doesNotMatch(finalizeSrc, /currentFocusedRenderable/);
+});
+
 test("streaming path performs no LLM normalization", () => {
   const src = fs.readFileSync(path.join(import.meta.dirname, "..", "lib", "stt.js"), "utf-8");
   const startIdx = src.indexOf("startStreamingDictation");

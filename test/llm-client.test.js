@@ -321,6 +321,36 @@ test("falls back to model api url when provider has no baseURL", () => {
   assert.equal(resolved.apiKeyEnv, null);
 });
 
+test("selects the exported env candidate instead of always envVars[0]", () => {
+  const prevA = process.env.VOICE_TEST_KEY_A;
+  const prevB = process.env.VOICE_TEST_KEY_B;
+  delete process.env.VOICE_TEST_KEY_A;
+  process.env.VOICE_TEST_KEY_B = "second-secret";
+  try {
+    const provider = {
+      id: "p1",
+      env: ["VOICE_TEST_KEY_A", "VOICE_TEST_KEY_B"],
+      options: { baseURL: "https://llm.test/v1" },
+    };
+    const model = { id: "m1", api: { url: "https://llm.test/v1" } };
+    // Only the second alt key is exported: requests must use it, otherwise
+    // they go out unauthenticated.
+    assert.equal(resolveProviderConfig(provider, model).apiKeyEnv, "VOICE_TEST_KEY_B");
+    // First exported key still wins when present.
+    process.env.VOICE_TEST_KEY_A = "first-secret";
+    assert.equal(resolveProviderConfig(provider, model).apiKeyEnv, "VOICE_TEST_KEY_A");
+    // Nothing exported: keep the first name for diagnostics.
+    delete process.env.VOICE_TEST_KEY_A;
+    delete process.env.VOICE_TEST_KEY_B;
+    assert.equal(resolveProviderConfig(provider, model).apiKeyEnv, "VOICE_TEST_KEY_A");
+  } finally {
+    if (prevA === undefined) delete process.env.VOICE_TEST_KEY_A;
+    else process.env.VOICE_TEST_KEY_A = prevA;
+    if (prevB === undefined) delete process.env.VOICE_TEST_KEY_B;
+    else process.env.VOICE_TEST_KEY_B = prevB;
+  }
+});
+
 test("uses voice-selected provider when explicit options are missing", async () => {
   const previousFetch = globalThis.fetch;
   const previousKey = process.env.VOICE_TEST_KEY;
