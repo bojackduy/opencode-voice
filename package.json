@@ -1,6 +1,6 @@
 {
   "name": "@bojackduy/opencode-voice",
-  "version": "0.1.0",
+  "version": "0.7.0",
   "description": "Speech-to-text and text-to-speech for OpenCode. Record voice prompts with whisper-cpp, hear responses via Piper TTS, with LLM normalization through any OpenAI-compatible endpoint.",
   "keywords": [
     "opencode",
