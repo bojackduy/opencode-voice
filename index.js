@@ -32,6 +32,7 @@
 //   /voice-notes-stop    - stop live notes, flush, and save (palette-only)
 //   /voice-notes-cancel  - stop live notes immediately, save in background (palette-only)
 //   /voice-notes-status  - show live-notes recording status (palette-only)
+//   /voice-cancel        - cancel everything in flight            (default: <leader>.)
 //   All also palette-accessible via Ctrl+P or /slash. Override via plugin options `keybinds`:
 //   { "keybinds": { "stt.record": "ctrl+r", "tts.speak-last": "none", "voice.conversation": "none" } }
 //   Weird keys [ ] ; were chosen because opencode doesn't use them and shift variants were ignored in terminals.
@@ -43,6 +44,7 @@ import { registerSTT } from "./lib/stt.js";
 import { registerTTS } from "./lib/tts.js";
 import { registerConversation } from "./lib/conversation.js";
 import { registerLiveNotes } from "./lib/live-notes.js";
+import { registerVoiceCancel } from "./lib/cancel.js";
 import { registerVoiceModel, resolveVoiceProviderModel } from "./lib/voice-model.js";
 import { createClient } from "./lib/llm-client.js";
 import { createLogger } from "./lib/logger.js";
@@ -112,6 +114,12 @@ export default {
     });
     shared.liveNotes = liveNotes.controller;
     const voiceModel = registerVoiceModel(api, kv, options, logger);
+    const cancel = registerVoiceCancel(api, options, logger, {
+      stt: stt.controller,
+      tts: tts.controller,
+      conversation: shared.conversation,
+      liveNotes: shared.liveNotes,
+    });
 
     api.command.register(() => [
       ...stt.commands,
@@ -119,6 +127,7 @@ export default {
       ...conversation.commands,
       ...liveNotes.commands,
       ...voiceModel.commands,
+      ...cancel.commands,
     ]);
   },
 };

@@ -554,6 +554,19 @@ Options:
 Not in v1: speaker diarization, automatic summaries/action items, and
 uploading the notes anywhere - the Markdown file stays local.
 
+### Global cancel
+
+| Command         | Keybind    | Description                        |
+| --------------- | ---------- | ---------------------------------- |
+| `/voice-cancel` | `leader+.` | Stop any in-flight voice operation |
+
+One keypress cancels whatever is running: batch recording (or its
+transcribe/normalize pipeline), streaming dictation, TTS playback (or a
+pending speech handoff), the voice-conversation loop, and live-notes capture
+(live notes finishes saving in the background, like `/voice-notes-cancel`).
+Idle invocations toast `Nothing to cancel`. Keybind override:
+`"keybinds": { "voice.cancel": "none" }`.
+
 ### Streaming dictation
 
 Live local dictation for short prompts: the mic stays on, partial
