@@ -7,6 +7,7 @@ import {
   normalizePhrase,
   registerConversation,
 } from "../lib/conversation.js";
+import { __setProcessingToastFn } from "../lib/stt.js";
 
 test("normalizes phrases for comparison", () => {
   assert.equal(normalizePhrase("  Stop... "), "stop");
@@ -54,13 +55,18 @@ function makeHarness({ transcribe = { text: "hello" }, opts = {} } = {}) {
   const toasts = [];
   const handlers = {};
   const stateData = { messages: [], parts: {} };
+  // The sticky status toast is what makes a phase legible on screen, so tests
+  // watch it in the same list as the one-shot toasts.
+  __setProcessingToastFn((input) => toasts.push(input?.message ?? input));
   const api = {
     ui: { toast: (input) => toasts.push(input?.message ?? input) },
     route: { current: { name: "session", params: { sessionID: "s1" } } },
     event: {
       on: (type, handler) => {
         (handlers[type] ??= []).push(handler);
-        return () => {};
+        return () => {
+          handlers[type] = (handlers[type] || []).filter((h) => h !== handler);
+        };
       },
     },
     state: {
@@ -76,6 +82,7 @@ function makeHarness({ transcribe = { text: "hello" }, opts = {} } = {}) {
     speakFull: 0,
     speakCalls: [],
     submitted: [],
+    stopHint: undefined,
   };
   let speakGate = null;
   let speakWordGate = null;
@@ -86,7 +93,9 @@ function makeHarness({ transcribe = { text: "hello" }, opts = {} } = {}) {
       calls.sttStart += 1;
       return true;
     },
-    setStopHint: () => {},
+    setStopHint: (hint) => {
+      calls.stopHint = hint;
+    },
     cancel: () => {},
     discard: () => {},
     transcribeTurn: () =>
@@ -138,90 +147,198 @@ function makeHarness({ transcribe = { text: "hello" }, opts = {} } = {}) {
   };
 }
 
-function fireIdle(h, sessionID = "s1") {
-  for (const handler of h["session.idle"] || []) {
+function fireEvent(handlers, type, sessionID = "s1") {
+  for (const handler of handlers[type] || []) {
     handler({ properties: { sessionID } });
   }
 }
 
-test("full turn loops back to recording", async () => {
+function fireIdle(h) {
+  fireEvent(h, "session.idle");
+}
+
+test("start leaves the mic closed until the key is pressed", () => {
   const h = makeHarness();
-  h.controller.onKey("toggle");
+  h.controller.onKey();
+  assert.equal(h.calls.sttStart, 0);
+  assert.equal(h.calls.stopHint, "<leader>v");
+  assert.ok(h.toasts.some((t) => t.includes("<leader>v") && t.includes("talk")));
+  h.controller.onKey();
   assert.equal(h.calls.sttStart, 1);
-  h.controller.onKey("toggle");
+  h.controller.stop("test");
+  assert.equal(h.calls.stopHint, null);
+});
+
+test("full turn rests paused after speaking, next key starts turn 2", async () => {
+  const h = makeHarness();
+  h.controller.onKey();
+  h.controller.onKey();
+  assert.equal(h.calls.sttStart, 1);
+  h.controller.onKey();
   await tick(30);
   assert.deepEqual(h.calls.submitted, ["hello"]);
   fireIdle(h.handlers);
   await tick(30);
   assert.equal(h.calls.speakTurn, 1);
+  // Push-to-talk: the loop must never reopen the mic by itself.
+  assert.equal(h.calls.sttStart, 1);
+  assert.ok(h.toasts.some((t) => t.includes("Press <leader>v to talk")));
+  h.controller.onKey();
   assert.equal(h.calls.sttStart, 2);
   h.controller.stop("test");
 });
 
-test("speaking + key pauses, next key records again", async () => {
+test("speaking + key barges in: cuts audio and opens the mic in one press", async () => {
   const h = makeHarness();
   let release;
   h.setSpeakGate(new Promise((r) => (release = r)));
-  h.controller.onKey("toggle");
-  h.controller.onKey("toggle");
+  h.controller.onKey();
+  h.controller.onKey();
+  h.controller.onKey();
   await tick(30);
   fireIdle(h.handlers);
   await tick(20);
   assert.equal(h.calls.speakTurn, 1);
-  h.controller.onKey("toggle");
+  h.controller.onKey();
   assert.equal(h.calls.ttsStop, 1);
-  assert.ok(h.toasts.some((t) => t.includes("Paused")));
+  assert.equal(h.calls.sttStart, 2);
   release();
   await tick(20);
-  assert.equal(h.calls.sttStart, 1);
-  h.controller.onKey("toggle");
   assert.equal(h.calls.sttStart, 2);
   h.controller.stop("test");
 });
 
 test("empty turn pauses instead of re-recording", async () => {
   const h = makeHarness({ transcribe: { text: null, empty: true } });
-  h.controller.onKey("toggle");
-  h.controller.onKey("toggle");
+  h.controller.onKey();
+  h.controller.onKey();
+  h.controller.onKey();
   await tick(20);
   assert.equal(h.calls.sttStart, 1);
   assert.ok(h.toasts.some((t) => t.includes("No speech")));
-  h.controller.onKey("toggle");
+  h.controller.onKey();
   assert.equal(h.calls.sttStart, 2);
   h.controller.stop("test");
 });
 
-test("toggle while waiting exits and drops the late reply", async () => {
+test("toggle while waiting barges in and drops the late reply", async () => {
   const h = makeHarness();
-  h.controller.onKey("toggle");
-  h.controller.onKey("toggle");
+  h.controller.onKey();
+  h.controller.onKey();
+  h.controller.onKey();
   await tick(30);
   assert.deepEqual(h.calls.submitted, ["hello"]);
-  h.controller.onKey("toggle");
-  assert.ok(h.toasts.includes("Conversation off"));
+  h.controller.onKey();
+  // A press means "talk now", never "exit" - the mode stays on.
+  assert.equal(h.controller.isActive(), true);
+  assert.ok(!h.toasts.includes("Conversation off"));
+  assert.equal(h.calls.sttStart, 2);
   fireIdle(h.handlers);
   await tick(30);
   assert.equal(h.calls.speakTurn, 0);
+  assert.deepEqual(h.calls.speakCalls, []);
+  h.controller.stop("test");
 });
 
-test("exit during processing cancels the turn", async () => {
+test("toggle during processing reports busy instead of exiting", async () => {
   let resolveTranscribe;
   const pending = new Promise((r) => (resolveTranscribe = r));
   const h = makeHarness({ transcribe: pending });
-  h.controller.onKey("toggle");
-  h.controller.onKey("toggle");
+  h.controller.onKey();
+  h.controller.onKey();
+  h.controller.onKey();
   await tick(10);
-  h.controller.onKey("toggle");
-  assert.ok(h.toasts.includes("Conversation off"));
+  h.controller.onKey();
+  assert.ok(h.toasts.some((t) => t.includes("busy")));
+  assert.ok(!h.toasts.includes("Conversation off"));
   resolveTranscribe({ text: "late hello" });
   await tick(20);
-  assert.deepEqual(h.calls.submitted, []);
+  assert.deepEqual(h.calls.submitted, ["late hello"]);
+  h.controller.stop("test");
+});
+
+test("question gate keeps the mic shut and speaks the post-answer reply", async () => {
+  const h = makeHarness();
+  h.controller.onKey();
+  h.controller.onKey();
+  h.controller.onKey();
+  await tick(30);
+  assert.deepEqual(h.calls.submitted, ["hello"]);
+  fireEvent(h.handlers, "question.asked");
+  await tick(30);
+  // Notice spoken, mic NOT opened: the user answers on screen.
+  assert.ok(h.calls.speakCalls.includes("A question needs your answer. Please check your screen."));
+  assert.equal(h.calls.sttStart, 1);
+  assert.ok(h.toasts.some((t) => t.includes("Answer on screen")));
+  // The agent resumes: its answer must be spoken (this used to be silent).
+  h.stateData.messages.push({ id: "a1", role: "assistant", time: { created: Date.now() } });
+  h.stateData.parts["a1"] = [{ id: "p1", type: "text", text: "" }];
+  for (const handler of h.handlers["message.part.delta"] || []) {
+    handler({
+      properties: {
+        sessionID: "s1",
+        messageID: "a1",
+        partID: "p1",
+        field: "text",
+        delta: "The answer is 42.",
+      },
+    });
+  }
+  await tick(20);
+  assert.ok(h.calls.speakCalls.includes("The answer is 42."));
+  fireIdle(h.handlers);
+  await tick(30);
+  assert.equal(h.calls.speakFull, 0);
+  assert.equal(h.calls.sttStart, 1);
+  h.controller.stop("test");
+});
+
+test("permission gate + press barges in: pending answer dropped, mic opens", async () => {
+  const h = makeHarness();
+  h.controller.onKey();
+  h.controller.onKey();
+  h.controller.onKey();
+  await tick(30);
+  fireEvent(h.handlers, "permission.asked");
+  await tick(30);
+  assert.ok(h.calls.speakCalls.includes("Permission requested. Please check your screen."));
+  assert.equal(h.calls.sttStart, 1);
+  const stopsBefore = h.calls.ttsStop;
+  h.controller.onKey();
+  assert.ok(h.calls.ttsStop > stopsBefore);
+  assert.equal(h.calls.sttStart, 2);
+  // A late idle must not resurrect the answer that was abandoned.
+  fireIdle(h.handlers);
+  await tick(30);
+  assert.equal(h.calls.speakFull, 0);
+  assert.deepEqual(h.calls.submitted, ["hello"]);
+  assert.equal(h.controller.isActive(), true);
+  h.controller.stop("test");
+});
+
+test("phase toasts name the configured key", async () => {
+  const h = makeHarness({ opts: { keybinds: { "voice.conversation": "ctrl+b" } } });
+  h.controller.onKey();
+  assert.ok(h.toasts.some((t) => t.includes("ctrl+b") && t.includes("talk")));
+  h.controller.onKey();
+  assert.ok(h.toasts.some((t) => t.includes("ctrl+b") && t.includes("send")));
+  let release;
+  h.setSpeakGate(new Promise((r) => (release = r)));
+  h.controller.onKey();
+  await tick(30);
+  assert.ok(h.toasts.some((t) => t.includes("Working - press ctrl+b to talk")));
+  fireIdle(h.handlers);
+  await tick(20);
+  assert.ok(h.toasts.some((t) => t.includes("Speaking - press ctrl+b to interrupt")));
+  h.controller.stop("test");
+  release();
 });
 
 test("streams reply deltas while waiting, skips full speak", async () => {
   const h = makeHarness();
-  h.controller.onKey("toggle");
-  h.controller.onKey("toggle");
+  h.controller.onKey();
+  h.controller.onKey();
+  h.controller.onKey();
   await tick(30);
   h.stateData.messages.push({ id: "a1", role: "assistant", time: { created: Date.now() } });
   h.stateData.parts["a1"] = [
@@ -241,18 +358,20 @@ test("streams reply deltas while waiting, skips full speak", async () => {
   fireIdle(h.handlers);
   await tick(30);
   assert.equal(h.calls.speakFull, 0);
-  assert.equal(h.calls.sttStart, 2);
+  assert.equal(h.calls.sttStart, 1);
+  h.controller.stop("test");
 });
 
 test("falls back to full speak when nothing streamable arrives", async () => {
   const h = makeHarness();
-  h.controller.onKey("toggle");
-  h.controller.onKey("toggle");
+  h.controller.onKey();
+  h.controller.onKey();
+  h.controller.onKey();
   await tick(30);
   fireIdle(h.handlers);
   await tick(30);
   assert.equal(h.calls.speakFull, 1);
-  assert.equal(h.calls.sttStart, 2);
+  assert.equal(h.calls.sttStart, 1);
   h.controller.stop("test");
 });
 
@@ -261,8 +380,9 @@ test("tts stop key pauses speaking, ignored when inactive", async () => {
   assert.equal(h.controller.onTtsStop(), false);
   let release;
   h.setSpeakGate(new Promise((r) => (release = r)));
-  h.controller.onKey("toggle");
-  h.controller.onKey("toggle");
+  h.controller.onKey();
+  h.controller.onKey();
+  h.controller.onKey();
   await tick(30);
   fireIdle(h.handlers);
   await tick(20);
@@ -285,8 +405,9 @@ test("explicit default list would kill the lenient vocabulary", () => {
 
 test("default registration exits on stuttered stop instead of submitting", async () => {
   const h = makeHarness({ transcribe: { text: "stop stop" } });
-  h.controller.onKey("toggle");
-  h.controller.onKey("toggle");
+  h.controller.onKey();
+  h.controller.onKey();
+  h.controller.onKey();
   await tick(30);
   assert.deepEqual(h.calls.submitted, []);
   assert.ok(h.toasts.includes("Conversation off"));
@@ -298,8 +419,9 @@ test("custom stop phrases take full control with exact matching", async () => {
     transcribe: { text: "stop stop" },
     opts: { conversationStopPhrases: ["halt"] },
   });
-  h.controller.onKey("toggle");
-  h.controller.onKey("toggle");
+  h.controller.onKey();
+  h.controller.onKey();
+  h.controller.onKey();
   await tick(30);
   // "stop stop" is not the custom list: submitted, not exited.
   assert.deepEqual(h.calls.submitted, ["stop stop"]);
@@ -310,8 +432,9 @@ test("queued sentences still drain after the turn flips to speaking", async () =
   const h = makeHarness();
   let releaseSpeak;
   h.setSpeakWordGate(new Promise((r) => (releaseSpeak = r)));
-  h.controller.onKey("toggle");
-  h.controller.onKey("toggle");
+  h.controller.onKey();
+  h.controller.onKey();
+  h.controller.onKey();
   await tick(30);
   h.stateData.messages.push({ id: "a1", role: "assistant", time: { created: Date.now() } });
   h.stateData.parts["a1"] = [{ id: "p1", type: "text", text: "" }];

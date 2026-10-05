@@ -419,36 +419,47 @@ then `s`.
 
 ### Voice conversation
 
-| Command                    | Keybind    | Description                               |
-| -------------------------- | ---------- | ----------------------------------------- |
-| `/voice-conversation`      | `leader+v` | Toggle hands-free voice conversation mode |
-| `/voice-conversation-stop` |            | Exit voice conversation mode              |
+| Command                    | Keybind    | Description                                 |
+| -------------------------- | ---------- | ------------------------------------------- |
+| `/voice-conversation`      | `leader+v` | Toggle push-to-talk voice conversation mode |
+| `/voice-conversation-stop` |            | Exit voice conversation mode                |
 
-One key drives the whole loop - its meaning follows the toast on screen:
+One key drives the whole loop. It always means the same thing - "I want the
+floor" - and what it does follows the toast on screen:
 
 ```
-record -> transcribe -> normalize -> submit -> wait reply -> speak -> record ...
+press -> record -> press -> transcribe -> normalize -> submit -> speak -> press ...
 ```
 
-| Toast shows               | Pressing the key does                |
-| ------------------------- | ------------------------------------ |
-| ● Recording               | Finish the turn and submit           |
-| Speaking...               | Pause speech (press again to record) |
-| Paused                    | Record again                         |
-| Waiting / Transcribing... | Exit the mode                        |
+| Toast shows              | Pressing the key does                     |
+| ------------------------ | ----------------------------------------- |
+| Press `leader+v` to talk | Open the mic (this is the resting state)  |
+| ● Recording              | Finish the turn and submit                |
+| Working... / Speaking    | Barge in: cut audio, drop reply, open mic |
+| Answer on screen         | Same barge-in, while the agent resumes    |
+| Transcribing...          | Report busy - too short to interrupt      |
 
-Empty or failed turns pause instead of re-recording, so the key never
-surprises. Saying only a stop phrase (`stop`, `stop stop`, `dừng lại đi`,
-...) ends the mode without submitting - full sentences mentioning stop still
-submit normally. `/tts-stop` pauses a speaking reply; `/voice-conversation-stop`
-exits from anywhere. While the mode is on, the plain `/stt-record` keys act
-as the conversation key and auto TTS stays silent (the loop speaks the reply
-itself).
+The loop never reopens the mic by itself: after a reply is spoken the mode rests
+paused, so it cannot record the room while nobody is talking. Barge-in drops
+the pending reply on purpose - pressing means talking now, not hearing the
+rest.
+
+Answering a permission or a question is the one thing the key cannot do,
+because that answer is given on screen. The mode announces the gate, keeps the
+mic shut, then speaks the agent's answer once the agent resumes.
+
+Exit paths: a stop phrase (`stop`, `stop stop`, `dừng lại đi`, ...),
+`/voice-conversation-stop`, or the global `/voice-cancel` (`leader+.`). Only a
+bare stop phrase ends the mode - full sentences mentioning stop submit
+normally. Empty or failed turns pause instead of re-recording, so the key never
+surprises. `/tts-stop` pauses a speaking reply and rests paused. While the mode
+is on, the plain `/stt-record` keys act as the conversation key and auto TTS
+stays silent (the loop speaks the reply itself).
 
 While waiting, assistant text is spoken sentence by sentence as it streams in
 (local cleanup, no LLM), so the answer starts before the agent turn finishes.
 Code-like sentences are skipped; replies with nothing streamable fall back to
-the full narrated speak. Pressing the key mid-stream exits the mode.
+the full narrated speak.
 
 - `ttsNormalizeMode` _(optional)_ - `"llm"` (default, polished narration) or
   `"local"` (instant deterministic cleanup, no network). Streaming speech
@@ -666,6 +677,10 @@ live-mic session was measured.
 2. The LLM decides how to handle it: narrate simple answers, summarize
    code-heavy responses, or briefly notify for confirmations
 3. Piper synthesizes speech locally, piped through sox for playback
+
+The LLM is only a polish layer: when the configured model is unavailable or out
+of quota, TTS speaks the local cleanup automatically instead of going silent.
+Set `ttsNormalizeMode: "local"` to skip narration entirely.
 
 ### Auto TTS
 
