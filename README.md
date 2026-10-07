@@ -243,6 +243,65 @@ English reply no longer flips the whole thing to the Vietnamese voice, and
 vice versa. Toneless Vietnamese (no diacritics) still reads as English -
 that is not distinguishable from English by this heuristic.
 
+### Chatterbox engine (optional)
+
+Piper is the default and needs no setup beyond the section above. For more
+natural-sounding English, opt into [Chatterbox](https://github.com/resemble-ai/chatterbox)
+(Resemble AI, MIT) as the synthesis engine. It runs as a managed sidecar
+(`vendor/chatterbox_server.py`, stdlib HTTP only): the model loads once, the
+plugin probes readiness, and the sidecar is killed on dispose. Playback still
+goes through the existing `play` path, so `/tts-stop` and cancel behave the
+same on both engines.
+
+Setup (isolated venv, never touches your system python):
+
+```bash
+python3 -m venv ~/.local/share/opencode-voice/chatterbox-venv
+~/.local/share/opencode-voice/chatterbox-venv/bin/pip install chatterbox-tts
+# chatterbox's `perth` dependency needs pkg_resources (removed in setuptools ≥ 81):
+~/.local/share/opencode-voice/chatterbox-venv/bin/pip install 'setuptools<81'
+```
+
+First run downloads ~7GB of weights from HuggingFace, then the sidecar takes
+~20s to load on Apple Silicon (MPS). No venv, no weights, no wavs are ever
+committed.
+
+Options in `tui.json` (all under the plugin entry, next to `endpoint`):
+
+```json
+{
+  "ttsEngine": "chatterbox",
+  "ttsChatterboxVariant": "multilingual",
+  "ttsChatterboxVoiceRef": "/absolute/path/to/voice-5-20s.wav"
+}
+```
+
+- `ttsEngine`: `"piper"` (default) | `"chatterbox"`. Unknown values warn and
+  use Piper.
+- `ttsChatterboxVariant`: `"multilingual"` (default) | `"turbo"` | `"nano"`.
+- `ttsChatterboxVoiceRef`: optional absolute path to a 5-20s reference wav
+  for zero-shot voice cloning. Unset means the model default voice; a missing
+  file warns and proceeds voiceless.
+- `ttsChatterboxPython`: optional python binary for the sidecar. Defaults to
+  `python3` on `PATH` - set it to the venv python above.
+
+Per-utterance Piper fallback: whenever Chatterbox cannot speak an utterance,
+that utterance goes to Piper with a warn log (one toast per outage, not per
+utterance; the next utterance retries Chatterbox). Cases: sidecar not
+installed/crashed, ~15s synthesis bound exceeded, and language routing below.
+
+Honest limits, measured on Apple Silicon (MPS) with Multilingual V3:
+
+- Chatterbox does **not** speak Vietnamese. Its multilingual model covers 23
+  languages (`ar da de el en es fi fr he hi it ja ko ms nl no pl pt ru sv sw
+th tr zh`) - `vi` is not one, so **every** Vietnamese utterance falls back
+  to Piper regardless of variant. Nano/Turbo are English-only by design.
+- Latency for "Deploying now.": Piper 0.77s wall for 0.80s of audio (RTF
+  ~1.0); Chatterbox ~16s wall for ~1s of audio on first synthesis after load
+  (RTF ~15, MPS warmup included), ~5-8s wall (RTF ~1.5-3) once warm. It is a
+  quality upgrade, not a speed one.
+- Outputs carry Chatterbox's inaudible PerTh watermark.
+
 ### LLM endpoint
 
 An OpenAI-compatible LLM endpoint is required for text normalization. For
