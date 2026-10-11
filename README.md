@@ -12,6 +12,105 @@ spoken aloud via Piper TTS. Both directions use an LLM to normalize text for
 natural speech (fixing homophones, splitting camelCase identifiers, summarizing
 code-heavy responses, etc.).
 
+## OpenCode v1 and v2
+
+One package runs on both OpenCode 1.x and 2.x. The plugin detects the host
+by capability (never by version string) and adapts; the v1 path is unchanged.
+
+> [!IMPORTANT]
+> **Submit-only mode on v2.** OpenCode v2.0.26 exposes no plugin API for
+> appending text to the composer for editing, so the v1 STT loop of
+> transcribe → append → edit → submit is unimplementable there. On v2 every
+> STT turn **transcribes and submits immediately** via `session.prompt` —
+> both `/stt-record` and `/stt-submit` submit — and the turn toast says
+> submitted, never "added to prompt". A warning toast on first load says the
+> same. There is deliberately no edit step; nothing is faked.
+
+### v1 (OpenCode 1.x)
+
+Use the `tui.json` snippet under [Install](#install) — unchanged.
+
+### v2 (OpenCode 2.x)
+
+Add the plugin to `cli.json` (create at `~/.config/opencode/cli.json` if it
+doesn't exist):
+
+```json
+{
+  "$schema": "https://opencode.ai/v2/cli.json",
+  "plugins": [
+    {
+      "package": "@bojackduy/opencode-voice",
+      "options": {
+        "endpoint": "https://api.anthropic.com/v1",
+        "model": "claude-haiku-4-5",
+        "apiKeyEnv": "ANTHROPIC_API_KEY"
+      }
+    }
+  ]
+}
+```
+
+Every plugin option documented below (`sttLanguage`, `ttsEngine`,
+`keybinds`, …) works the same on v2 — options ride `context.options`, and
+the `keybinds` command ids are stable across hosts. To test unpublished
+changes, point `package` at the local repo path instead of the npm name.
+
+To verify the plugin loaded: `opencode plugin list` shows it as a `local`
+package (its TUI entrypoint is a literal `tui.js` file — v2 resolves local
+packages by file probe, not by the `exports` map, so that file must exist).
+Then press `Ctrl+P` or type `/` in the composer: all 19 commands are there
+under the `opencode-voice` group with their slash names (`/stt-record`,
+`/tts-speak`, `/voice-cancel`, …), verified live on 2.0.26.
+
+> [!NOTE]
+> **Default keybinds on v2.** The defaults (`<leader>[`, `<leader>.`, …)
+> display correctly in the palette (translated to `ctrl+x [` style, since v2
+> bind strings have no `<leader>` token) but multi-key sequences do not
+> dispatch on 2.0.26 — only single-combo binds fire (verified: an overridden
+> `"keybinds": { "voice.cancel": "ctrl+r" }` runs the command, while
+> `ctrl+x .` stays silent). Until the host fixes sequence dispatch, override
+> any keybind you need with a single combo via the `keybinds` option; every
+> command stays reachable via palette and `/slash` regardless.
+
+`engines` status: the package declares no `engines.opencode` field, so both
+v1 and v2 load it unconstrained. A version pin was considered and skipped on
+purpose: it could refuse to load on untested hosts for no benefit, since
+capability detection already picks the right path per host.
+
+### Per-feature v2 caveats
+
+- **Commands:** all 19 register with the same ids, titles, palette group,
+  slash names, and keybinds as v1. On 2.0.26 the `/slash` completion lists
+  every one reliably; the `Ctrl+P` palette shows them for matching queries
+  but its search occasionally reports no results for queries that should
+  match — when in doubt, use `/slash`.
+- **STT (batch):** submits immediately, no edit step (see above). With no
+  active session the transcript is kept via warning toast and nothing is
+  submitted.
+- **STT (streaming dictation):** live composer previews and finalize-insert
+  have no v2 primitive, so finalizing keeps the dictated text via toast
+  instead of inserting or submitting. Untested on v2 beyond that — prefer
+  batch mode there.
+- **TTS / conversation / live notes / cancel:** same semantics as v1 (auto
+  TTS on idle/permission/question gates, conversation barge-in, live-notes
+  background saves, one-key cancel).
+- **Reply-streaming triggers:** `message.part.delta` is remapped to v2's
+  `session.text.delta`; `session.idle`, `session.status`, and
+  `permission.asked` pass through unchanged. `question.asked` has no v2
+  equivalent and is mapped best-effort to `form.created`: with several
+  sessions open, a form in one session can pause speech in another.
+  Single-session use is unaffected.
+- **Pickers** (`/stt-model`, `/stt-language`, `/stt-mic`, `/tts-voice`,
+  `/voice-model`): same options through promise dialogs, including the
+  nested provider → model pick.
+- **Settings persistence:** stored via v2 storage (survives restarts, syncs
+  across windows). If storage is unavailable the plugin keeps working with
+  memory-only settings for the session.
+- **Logging:** v2 has no `client.app.log`, so the debug/warn/error
+  diagnostics the plugin writes to the OpenCode log on v1 are silent on v2.
+  User-facing warnings still arrive as toasts.
+
 ## Install
 
 Add to your `tui.json` (create at `~/.config/opencode/tui.json` if it doesn't

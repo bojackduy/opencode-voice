@@ -1,7 +1,9 @@
 // opencode-voice: Speech-to-text and text-to-speech for OpenCode.
 //
 // STT: Record voice via sox, transcribe with whisper-cpp, normalize with
-//      an OpenAI-compatible LLM, append to the TUI prompt.
+//      an OpenAI-compatible LLM, append to the TUI prompt (v1) or submit
+//      immediately via session.prompt (v2 submit-only mode, see README
+//      "OpenCode v1 and v2").
 //
 // TTS: Auto-speak assistant responses (or read on demand) via Piper,
 //      with LLM normalization for natural speech.
@@ -38,96 +40,47 @@
 //   Weird keys [ ] ; were chosen because opencode doesn't use them and shift variants were ignored in terminals.
 //   <leader>v is free in opencode defaults (c/e/s/m/a/y/u/r/h etc. are taken) and mnemonic for voice.
 
-import fs from "node:fs";
-import os from "node:os";
-import { registerSTT } from "./lib/stt.js";
-import { registerTTS } from "./lib/tts.js";
-import { registerConversation } from "./lib/conversation.js";
-import { registerLiveNotes } from "./lib/live-notes.js";
-import { registerVoiceCancel } from "./lib/cancel.js";
-import { registerVoiceModel, resolveVoiceProviderModel } from "./lib/voice-model.js";
-import { createClient } from "./lib/llm-client.js";
-import { createLogger } from "./lib/logger.js";
+import { bootVoice } from "./lib/boot.js";
+import { adaptV2Context } from "./lib/v2-compat.js";
 
-function loadPromptFile(filePath, logger, name) {
-  if (!filePath) return null;
-  const resolved = filePath.replace(/^~(?=\/|$)/, os.homedir());
-  try {
-    const prompt = fs.readFileSync(resolved, "utf-8").trim() || null;
-    logger?.log(
-      "plugin",
-      prompt ? `Loaded ${name} prompt: ${resolved}` : `Ignored empty ${name} prompt: ${resolved}`,
-      "debug",
-    );
-    return prompt;
-  } catch (err) {
-    logger?.log("Plugin", `Failed to load ${name} prompt ${resolved}: ${err.message}`, "warn");
-    return null;
-  }
-}
-
+// Dual-compat export: v1's loader reads `tui`, v2's reads `setup`
+// (`Plugin.define` is an identity wrapper, so a plain object carries both).
+// Each host ignores the other's key. The core (`bootVoice`) is shared; v2
+// runs it over the v2-compat adapted api in submit-only mode.
 export default {
   id: "opencode-voice",
   tui: async (api, options) => {
-    const { kv } = api;
-    const logger = createLogger(api.client);
-    logger.log("plugin", "Initializing", "debug");
-    // Session-scoped gateways (opencode.ai/zen/go) require x-opencode-session.
-    // Read the live route at call time so normalize works in any session.
-    // The voice-selected provider (/voice-model) fills endpoint/model only
-    // when the explicit options leave them out.
-    const { complete } = createClient(
-      options,
-      logger,
-      () => {
-        const route = api?.route?.current;
-        return route?.name === "session" ? route?.params?.sessionID : undefined;
+    await bootVoice(api, options);
+  },
+  setup: async (ctx) => {
+    const adapted = adaptV2Context(ctx);
+    await bootVoice(adapted.api, ctx.options, {
+      submitOnly: true,
+      onReady: async ({ logger }) => {
+        // First-run submit-only notice (required UX disclosure): v2 has no
+        // append-to-composer API, so every STT turn submits immediately.
+        const notice =
+          "Voice on OpenCode v2: transcripts submit immediately as-is " +
+          "(submit-only mode — append-for-edit is unavailable on v2)";
+        adapted.api.ui.toast({ message: notice, variant: "warning", duration: 8000 });
+        logger?.log?.("plugin", `v2 submit-only mode: ${notice}`, "warn");
+        // v2 has no client.app.log, so the logger above is a no-op: compat
+        // warnings must surface as a toast or they are lost entirely.
+        if (adapted.warnMessages.length > 0) {
+          const shown = adapted.warnMessages.slice(0, 3).join(" | ");
+          const rest =
+            adapted.warnMessages.length > 3 ? ` (+${adapted.warnMessages.length - 3} more)` : "";
+          adapted.api.ui.toast({
+            message: `Voice v2 compat: ${shown}${rest}`,
+            variant: "warning",
+            duration: 8000,
+          });
+        }
+        for (const message of adapted.warnMessages) {
+          logger?.log?.("plugin", `v2-compat: ${message}`, "warn");
+        }
       },
-      () => resolveVoiceProviderModel(api, kv),
-    );
-
-    const prompts = {
-      stt: loadPromptFile(options?.sttPrompt, logger, "STT"),
-      ttsAuto: loadPromptFile(options?.ttsAutoPrompt, logger, "TTS auto"),
-      ttsManual: loadPromptFile(options?.ttsManualPrompt, logger, "TTS manual"),
-    };
-
-    const shared = {};
-    const stt = registerSTT(api, kv, complete, prompts, options, logger, {
-      isConversationActive: () => shared.conversation?.isActive() === true,
-      onConversationKey: (source) => shared.conversation?.onKey(source),
-      isLiveNotesActive: () => shared.liveNotes?.isActive() === true,
     });
-    const tts = registerTTS(api, kv, complete, prompts, options, logger, {
-      isConversationActive: () => shared.conversation?.isActive() === true,
-      onConversationStopKey: () => shared.conversation?.onTtsStop() === true,
-    });
-    const conversation = registerConversation(api, options, logger, {
-      stt: stt.controller,
-      tts: tts.controller,
-      isLiveNotesActive: () => shared.liveNotes?.isActive() === true,
-    });
-    shared.conversation = conversation.controller;
-    const liveNotes = registerLiveNotes(api, kv, complete, options, logger, {
-      tts: tts.controller,
-      isConversationActive: () => shared.conversation?.isActive() === true,
-    });
-    shared.liveNotes = liveNotes.controller;
-    const voiceModel = registerVoiceModel(api, kv, options, logger);
-    const cancel = registerVoiceCancel(api, options, logger, {
-      stt: stt.controller,
-      tts: tts.controller,
-      conversation: shared.conversation,
-      liveNotes: shared.liveNotes,
-    });
-
-    api.command.register(() => [
-      ...stt.commands,
-      ...tts.commands,
-      ...conversation.commands,
-      ...liveNotes.commands,
-      ...voiceModel.commands,
-      ...cancel.commands,
-    ]);
+    return adapted.cleanup;
   },
 };
