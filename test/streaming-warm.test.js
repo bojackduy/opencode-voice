@@ -252,8 +252,13 @@ test("stt.js session layer retains the lease and disposes only on server-fault/u
   assert.match(src, /disposeWarmStreamController/);
   // No unconditional dispose right after stop: the cold-start-per-dictation
   // regression (dispose on every finalize) must not come back. Exactly one
-  // dispose remains in finalize, guarded by the server-fault classifier.
+  // Server faults dispose; cancelled/disposed generations also release their
+  // stale handles instead of resurrecting a warm lease after unload.
   const disposeHits = finSrc.match(/controller\.dispose/g) || [];
-  assert.equal(disposeHits.length, 1);
-  assert.ok(finSrc.indexOf("isStreamingServerFault") < finSrc.indexOf("controller.dispose"));
+  assert.equal(disposeHits.length, 3);
+  assert.match(finSrc, /streamDisposed \|\| myGen !== streamGeneration/);
+  assert.match(
+    finSrc,
+    /!streamDisposed && myGen === streamGeneration\) retainWarmStreamController/,
+  );
 });

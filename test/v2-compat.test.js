@@ -15,16 +15,44 @@ import { adaptV2Context, isV2Context } from "../lib/v2-compat.js";
 
 // OBSERVED-v2: Context carries keymap.layer + ui.toast.show + storage;
 // a v1 api carries none of those paths.
+// ACTUAL-v2 shapes (from `@opencode/client@2.0.26` generated types):
+// SessionMessageInfo is a UNION with `type` (never `role`); assistant text in
+// `content[]`, user text in `text`. `session.message.get` (not a callable
+// `session.message`) fetches one message. Storage/dialog/keymap remain
+// behavior fakes.
+const V2_USER_MSG = {
+  id: "m-user-1",
+  time: { created: 1700000000000 },
+  type: "user",
+  text: "hello voice",
+};
+const V2_ASSISTANT_MSG = {
+  id: "m-asst-1",
+  time: { created: 1700000001000, completed: 1700000002000 },
+  type: "assistant",
+  agent: "default",
+  model: { id: "m", providerID: "p" },
+  content: [
+    { type: "text", text: "Hello there. How can I help?" },
+    { type: "reasoning", text: "internal thought" },
+  ],
+  finish: "stop",
+};
 function makeV2(overrides = {}) {
   const handlers = new Map();
   const toasts = [];
   const layers = [];
   const prompts = [];
+  const creates = [];
+  const navigations = [];
+  const alerts = [];
   const dialogCalls = [];
   const dialogResolutions = [];
   const storeState = { values: {} };
   const providers = overrides.providers || [];
-  const messages = overrides.messages || [];
+  // Live array ref, like the host's reactive view: tests may push messages.
+  const v2messages = overrides.messages || [V2_USER_MSG, V2_ASSISTANT_MSG];
+  const sessions = overrides.sessions || [{ id: "ses_V2", title: "V2 session" }];
   const ctx = {
     options: { endpoint: "http://localhost:11434/v1", model: "fake-test-model" },
     // Fake choice: LocationRef shape is opaque to us; the adapter only reads
@@ -35,9 +63,21 @@ function makeV2(overrides = {}) {
     client: {
       session: {
         list: async () => ({ data: [] }),
+        create: async (input) => {
+          creates.push(input);
+          return { id: "ses_NEW" };
+        },
         prompt: async (input) => {
           prompts.push(input);
           return { data: {} };
+        },
+        // ACTUAL-v2: message is a {get} namespace, not a callable.
+        message: {
+          get: async ({ messageID }) => {
+            const found = v2messages.find((m) => m?.id === messageID);
+            if (!found) throw new Error(`message not found: ${messageID}`);
+            return found;
+          },
         },
       },
     },
@@ -51,7 +91,14 @@ function makeV2(overrides = {}) {
           if (i >= 0) arr.splice(i, 1);
         };
       },
-      session: { message: { list: () => messages } },
+      session: {
+        list: () => sessions,
+        message: {
+          // ACTUAL-v2: sync live view returning the union array.
+          list: () => v2messages,
+          get: (sessionID, messageID) => v2messages.find((m) => m?.id === messageID),
+        },
+      },
       location: { provider: { list: () => providers } },
     },
     // OBSERVED-v2: keymap.layer(factory) with KeymapCommand
@@ -71,6 +118,9 @@ function makeV2(overrides = {}) {
       toast: { show: (o) => void toasts.push(o) },
       // OBSERVED-v2: promise dialog.select(options) -> value|undefined.
       dialog: {
+        alert: async (input) => {
+          alerts.push(input);
+        },
         select: async (o) => {
           dialogCalls.push(o);
           return dialogResolutions.length > 0 ? dialogResolutions.shift() : undefined;
@@ -78,7 +128,13 @@ function makeV2(overrides = {}) {
         clear: () => {},
       },
       // OBSERVED-v2: router.current() -> {type:'session',sessionID}.
-      router: { current: () => ({ type: "session", sessionID: "ses_V2" }) },
+      router: {
+        current: () => ({ type: "session", sessionID: "ses_V2" }),
+        navigate: (route) => {
+          navigations.push(route);
+          ctx.ui.router.current = () => route;
+        },
+      },
     },
   };
   const count = () => {
@@ -107,9 +163,13 @@ function makeV2(overrides = {}) {
     toasts,
     layers,
     prompts,
+    creates,
+    navigations,
+    alerts,
     dialogCalls,
     dialogResolutions,
     storeState,
+    v2messages,
     count,
     tick,
     slotClaims,
@@ -118,6 +178,27 @@ function makeV2(overrides = {}) {
 }
 
 const tick = () => new Promise((r) => setImmediate(r));
+
+test("v2 plugin keybind overrides retain custom leader syntax and disable none", async () => {
+  const fake = makeV2();
+  fake.ctx.options.keybinds = {
+    "stt.record": "ctrl+alt+r",
+    "tts.speak-last": "none",
+    "voice.conversation": "<leader>j",
+    "voice.cancel": false,
+  };
+  const cleanup = await plugin.setup(fake.ctx);
+  fake.renderSlots();
+  const layer = fake.layers[0];
+  const byId = Object.fromEntries(layer.commands.map((c) => [c.id, c]));
+  assert.equal(byId["stt.record"].bind, "ctrl+alt+r");
+  assert.equal(byId["voice.conversation"].bind, "<leader>j");
+  for (const id of ["tts.speak-last", "voice.cancel"]) {
+    assert.equal(byId[id].bind, undefined);
+    assert.ok(!layer.bindings.includes(id));
+  }
+  cleanup();
+});
 
 test("isV2Context detects v2 by capability, not version", () => {
   const { ctx } = makeV2();
@@ -186,11 +267,14 @@ test("v2 setup registers every header-block command by name", async () => {
     assert.ok(layer.bindings.includes("stt.record"), "bound id must join bindings");
     assert.ok(!layer.bindings.includes("stt.model"), "unbound id must not join bindings");
   }
-  // v1 `<leader>X` binds translate to v2 `ctrl+x X` (v2 has no leader
-  // token); falsy binds are omitted, never sent as bind:false.
+  // Binds pass through untouched: the v2 keymap resolves the `<leader>`
+  // token itself (leader defaults to ctrl+x). Falsy binds are omitted, never
+  // sent as bind:false.
   const byId = Object.fromEntries(commands.map((c) => [c.id, c]));
-  assert.equal(byId["stt.record"]?.bind, "ctrl+x [");
-  assert.equal(byId["voice.cancel"]?.bind, "ctrl+x .");
+  assert.equal(byId["stt.record"]?.bind, "<leader>[");
+  assert.equal(byId["voice.cancel"]?.bind, "<leader>.");
+  assert.equal(byId["tts.speak-last"]?.bind, "<leader>]");
+  assert.equal(byId["voice.conversation"]?.bind, "<leader>v");
   assert.ok(!("bind" in (byId["stt.model"] || {})), "unbound command must omit bind");
   // First-run submit-only notice: toast (up front, not buried) + log path.
   assert.ok(
@@ -244,21 +328,106 @@ test("v2 STT turn toast: real stt.js submit path prompts + toasts submit", async
   );
 });
 
-test("v2 STT submit with no active session warns loudly and throws", async () => {
+test("v2 home creates and navigates only for final text, submits once with selected model", async () => {
+  const fake = makeV2();
+  fake.ctx.ui.router.current = () => ({ type: "home" });
+  fake.ctx.ui.model = { current: () => ({ providerID: "p", modelID: "chosen", variant: "fast" }) };
+  const adapted = adaptV2Context(fake.ctx);
+  assert.equal(fake.creates.length, 0);
+  const send = () => adapted.api.client.tui.appendPrompt({ text: "captured home turn" });
+  await Promise.all([send(), send()]);
+  const model = { providerID: "p", id: "chosen", variant: "fast" };
+  assert.deepEqual(fake.creates, [{ location: fake.ctx.location, model }]);
+  assert.deepEqual(fake.navigations, [{ type: "session", sessionID: "ses_NEW" }]);
+  assert.deepEqual(fake.prompts, [{ sessionID: "ses_NEW", text: "captured home turn" }]);
+  assert.equal(adapted.api.route.current.params.sessionID, "ses_NEW");
+  await adapted.api.client.tui.appendPrompt({ text: "second turn" });
+  assert.equal(fake.creates.length, 1);
+  assert.equal(fake.prompts.length, 2);
+  assert.equal(fake.prompts[1].sessionID, "ses_NEW");
+});
+
+test("v2 create failure retains complete transcript visibly and allows retry", async () => {
+  const fake = makeV2();
+  fake.ctx.ui.router.current = () => ({ type: "home" });
+  const create = fake.ctx.client.session.create;
+  fake.ctx.client.session.create = async () => {
+    throw new Error("create unavailable");
+  };
+  const adapted = adaptV2Context(fake.ctx);
+  const text = "Retained full transcript. ".repeat(30);
+  await assert.rejects(() => adapted.api.client.tui.appendPrompt({ text }), /create unavailable/);
+  assert.deepEqual(fake.alerts, [{ title: "Voice transcript — not submitted", message: text }]);
+  assert.equal(fake.prompts.length, 0);
+  assert.equal(fake.navigations.length, 0);
+  fake.ctx.client.session.create = create;
+  await adapted.api.client.tui.appendPrompt({ text });
+  assert.equal(fake.prompts.length, 1);
+});
+
+test("v2 home submission cancellation and disposal fence a pending create", async () => {
+  for (const dispose of [false, true]) {
+    const fake = makeV2();
+    fake.ctx.ui.router.current = () => ({ type: "home" });
+    let resolveCreate;
+    fake.ctx.client.session.create = () =>
+      new Promise((resolve) => {
+        resolveCreate = resolve;
+      });
+    const adapted = adaptV2Context(fake.ctx);
+    let current = true;
+    const sent = adapted.api.client.tui.appendPrompt({
+      text: "must not send",
+      isCurrent: () => current,
+    });
+    if (dispose) adapted.cleanup();
+    else current = false;
+    resolveCreate({ id: "ses_CANCELLED" });
+    await assert.rejects(() => sent, /cancelled/);
+    assert.equal(fake.prompts.length, 0);
+    assert.equal(fake.navigations.length, 0);
+    assert.equal(fake.alerts.length, 0);
+  }
+});
+
+test("v2 empty or already cancelled text never creates a session", async () => {
   const fake = makeV2();
   fake.ctx.ui.router.current = () => ({ type: "home" });
   const adapted = adaptV2Context(fake.ctx);
+  await assert.rejects(() => adapted.api.client.tui.appendPrompt({ text: "" }), /No transcript/);
   await assert.rejects(
-    () => adapted.api.client.tui.appendPrompt({ text: "lost" }),
-    /No active session/,
+    () => adapted.api.client.tui.appendPrompt({ text: "stale", isCurrent: () => false }),
+    /cancelled/,
   );
+  assert.equal(fake.creates.length, 0);
   assert.equal(fake.prompts.length, 0);
-  assert.ok(
-    fake.toasts.some(
-      (t) => t?.variant === "warning" && /no active session/i.test(t?.message || ""),
-    ),
-    "expected loud warning toast",
+});
+
+test("real STT cancel invalidates v2 submit while home creation awaits", async () => {
+  const fake = makeV2();
+  fake.ctx.ui.router.current = () => ({ type: "home" });
+  let resolveCreate;
+  fake.ctx.client.session.create = () =>
+    new Promise((resolve) => {
+      resolveCreate = resolve;
+    });
+  const adapted = adaptV2Context(fake.ctx);
+  const { registerSTT } = await import("../lib/stt.js");
+  const stt = registerSTT(
+    adapted.api,
+    adapted.api.kv,
+    async () => ({ text: null }),
+    {},
+    {},
+    { log: () => {} },
   );
+  const sent = stt.controller.submitTurnText("cancelled home turn");
+  stt.controller.cancel();
+  resolveCreate({ id: "ses_NOT_SUBMITTED" });
+  assert.match((await sent).error, /cancelled/);
+  assert.equal(fake.prompts.length, 0);
+  assert.equal(fake.navigations.length, 0);
+  adapted.cleanup();
 });
 
 test("v2 dialog facade: option onSelect runs, kv persists, toast shows", async () => {
@@ -297,12 +466,14 @@ test("v2 event remap: v1 names subscribe to v2 types with properties envelope", 
   const [handler] = fake.handlers.get("session.text.delta");
   handler({
     type: "session.text.delta",
-    data: { sessionID: "ses_V2", assistantMessageID: "m1", delta: "hi" },
+    data: { sessionID: "ses_V2", assistantMessageID: "m1", ordinal: 0, delta: "hi" },
   });
   assert.equal(seen.length, 1);
   assert.equal(seen[0].properties.sessionID, "ses_V2");
   assert.equal(seen[0].properties.messageID, "m1");
   assert.equal(seen[0].properties.delta, "hi");
+  // v2 `ordinal` synthesizes the v1 `partID` the stream guards read.
+  assert.equal(seen[0].properties.partID, "m1:0");
   // question.asked has no v2 equivalent: best-effort form.created + warning.
   adapted.api.event.on("question.asked", () => {});
   assert.ok(fake.handlers.has("form.created"));
@@ -310,7 +481,11 @@ test("v2 event remap: v1 names subscribe to v2 types with properties envelope", 
 });
 
 test("v2 route/state/kv shims keep v1 call shapes working", async () => {
-  const fake = makeV2({ providers: [{ id: "p1", name: "P1", models: {}, env: [] }] });
+  const fake = makeV2({
+    providers: [{ id: "p1", name: "P1", models: {}, env: [] }],
+    messages: [],
+    sessions: [{ id: "ses_V2", title: "V2 session" }],
+  });
   const adapted = adaptV2Context(fake.ctx);
   assert.deepEqual(adapted.api.route.current, { name: "session", params: { sessionID: "ses_V2" } });
   assert.deepEqual(adapted.api.state.session.messages("ses_V2"), []);
@@ -323,7 +498,7 @@ test("v2 route/state/kv shims keep v1 call shapes working", async () => {
 });
 
 test("v2 TTS smoke: speak command degrades honestly with no content", async () => {
-  const fake = makeV2();
+  const fake = makeV2({ messages: [] });
   await plugin.setup(fake.ctx);
   fake.renderSlots();
   const commands = fake.layers.flatMap((l) => l.commands || []);
@@ -356,3 +531,201 @@ test("v2 dispose clean: setup cleanup removes all handlers", async () => {
   await cleanup2();
   assert.equal(second.count(), 0);
 });
+
+test("v2 messages normalize union type->role with v1-like parts", async () => {
+  // The user-reported TTS/conversation failures: v2 messages carry `type`,
+  // never `role`, with assistant text embedded in `content[]`.
+  const fake = makeV2();
+  const adapted = adaptV2Context(fake.ctx);
+  const list = adapted.api.state.session.messages("ses_V2");
+  assert.equal(list.length, 2);
+  const [user, assistant] = list;
+  assert.equal(user.role, "user");
+  assert.equal(assistant.role, "assistant");
+  assert.equal(user.parts.length, 1);
+  assert.deepEqual(user.parts[0], { id: "m-user-1:0", type: "text", text: "hello voice" });
+  // Text content becomes a text part; reasoning stays non-text typed.
+  assert.equal(assistant.parts.length, 2);
+  assert.equal(assistant.parts[0].type, "text");
+  assert.equal(assistant.parts[0].text, "Hello there. How can I help?");
+  assert.equal(assistant.parts[0].id, "m-asst-1:0");
+  assert.equal(assistant.parts[1].type, "reasoning");
+});
+
+test("v2 client.session.message shim serves the exact v1 tts.js call shape", async () => {
+  const fake = makeV2();
+  const adapted = adaptV2Context(fake.ctx);
+  // lib/tts.js getTurnAssistantText calls exactly this, then reads .parts.
+  const full = await adapted.api.client.session
+    .message({ sessionID: "ses_V2", messageID: "m-asst-1" }, { throwOnError: true })
+    .then((r) => r.data);
+  const text = (full?.parts || [])
+    .filter((p) => p.type === "text")
+    .map((p) => p.text || "")
+    .join("\n\n")
+    .trim();
+  assert.equal(text, "Hello there. How can I help?");
+  await assert.rejects(
+    () => adapted.api.client.session.message({ sessionID: "ses_V2", messageID: "nope" }),
+    /not found/,
+  );
+});
+
+test("v2 state.part resolves text parts through the current session", async () => {
+  const fake = makeV2();
+  const adapted = adaptV2Context(fake.ctx);
+  // Read order matches lib/session.js: messages() first, then part().
+  adapted.api.state.session.messages("ses_V2");
+  const parts = adapted.api.state.part("m-asst-1");
+  assert.ok(parts.some((p) => p?.type === "text" && /Hello there/.test(p?.text || "")));
+  // Text changes are read live, even without another messages() call.
+  fake.v2messages[1] = {
+    ...V2_ASSISTANT_MSG,
+    content: [{ type: "text", text: "Updated streamed reply." }],
+  };
+  assert.equal(adapted.api.state.part("m-asst-1")[0].text, "Updated streamed reply.");
+  // An id resolves directly via the session view; unknown stays [].
+  const fresh = makeV2();
+  const freshApi = adaptV2Context(fresh.ctx).api;
+  assert.ok(freshApi.state.part("m-user-1").some((p) => p?.text === "hello voice"));
+  assert.deepEqual(freshApi.state.part("missing"), []);
+});
+
+test("v2 TTS turn extraction finds assistant text in actual union shapes", async () => {
+  // Regression for "TTS says no assistant to speak despite an assistant
+  // reply": exercise the shared lookup used by both manual and turn TTS.
+  // No synthesis is requested, regardless of locally installed Piper/models.
+  const fake = makeV2();
+  const adapted = adaptV2Context(fake.ctx);
+  const { getTurnAssistantText } = await import("../lib/tts.js");
+  assert.deepEqual(await getTurnAssistantText(adapted.api.client, adapted.api), {
+    lastMessageID: "m-asst-1",
+    text: "Hello there. How can I help?",
+  });
+  fake.v2messages.push({
+    ...V2_ASSISTANT_MSG,
+    id: "m-asst-2",
+    content: [{ type: "text", text: "Next step." }],
+  });
+  assert.deepEqual(await getTurnAssistantText(adapted.api.client, adapted.api), {
+    lastMessageID: "m-asst-2",
+    text: "Hello there. How can I help?\n\nNext step.",
+  });
+  // A new user message terminates the previous assistant turn.
+  fake.v2messages.push({ ...V2_USER_MSG, id: "m-user-2" });
+  assert.equal(await getTurnAssistantText(adapted.api.client, adapted.api), null);
+  const empty = makeV2({ messages: [] });
+  const emptyAdapted = adaptV2Context(empty.ctx);
+  assert.equal(await getTurnAssistantText(emptyAdapted.api.client, emptyAdapted.api), null);
+});
+
+for (const fastReply of [false, true]) {
+  test(`v2 conversation home turn speaks ${fastReply ? "before prompt resolves" : "after submit"}`, async () => {
+    // Regression for "conversation mode does not work": REAL registerConversation
+    // over the adapted api with stub STT/TTS (no mic, no audio, no model).
+    const fake = makeV2({ messages: [] });
+    fake.ctx.ui.router.current = () => ({ type: "home" });
+    const adapted = adaptV2Context(fake.ctx);
+    const { registerConversation } = await import("../lib/conversation.js");
+    const { registerSTT } = await import("../lib/stt.js");
+    const submitter = registerSTT(
+      adapted.api,
+      adapted.api.kv,
+      async () => ({ text: null }),
+      {},
+      {},
+      { log: () => {} },
+    );
+    const spoken = [];
+    let turnSpoken = 0;
+    let recording = false;
+    const stt = {
+      isRecording: () => recording,
+      isProcessing: () => false,
+      start: () => {
+        recording = true;
+        return true;
+      },
+      setStopHint: () => {},
+      transcribeTurn: async () => ({ text: "hello there" }),
+      submitTurnText: async (text) => {
+        recording = false;
+        return submitter.controller.submitTurnText(text);
+      },
+      discard: () => {},
+      cancel: () => {
+        recording = false;
+      },
+    };
+    const tts = {
+      speak: async (sentence) => void spoken.push(sentence),
+      speakAssistantTurn: async () => {
+        turnSpoken += 1;
+        return { spoken: true };
+      },
+      stop: () => {},
+      setConversationActive: () => {},
+      isSpeaking: () => false,
+    };
+    const convo = registerConversation(
+      adapted.api,
+      { conversationRestartDelayMs: 5 },
+      { log: () => {} },
+      { stt, tts },
+    );
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const prompt = fake.ctx.client.session.prompt;
+    fake.ctx.client.session.prompt = async (input) => {
+      await prompt(input);
+      if (fastReply) emitReply();
+    };
+    convo.controller.start();
+    assert.equal(convo.controller.isActive(), true);
+    convo.controller.onKey(); // paused -> recording
+    convo.controller.onKey(); // recording -> submit flow (async)
+    await sleep(50); // let transcribe+submit resolve so waiting subscribes
+    assert.equal(fake.creates.length, 1);
+    assert.deepEqual(fake.prompts, [{ sessionID: "ses_NEW", text: "hello there" }]);
+    // Assistant reply arrives as an ACTUAL v2 union message + text delta.
+    function emitReply() {
+      fake.v2messages.push(
+        { id: "m-u2", time: { created: Date.now() }, type: "user", text: "hello there" },
+        {
+          id: "m-a2",
+          time: { created: Date.now() },
+          type: "assistant",
+          agent: "default",
+          model: { id: "m", providerID: "p" },
+          content: [{ type: "text", text: "Hello there." }],
+          finish: "stop",
+        },
+      );
+      const fire = (type, data) => {
+        for (const fn of fake.handlers.get(type) || []) fn({ type, data });
+      };
+      fire("session.text.delta", {
+        sessionID: "ses_NEW",
+        assistantMessageID: "m-a2",
+        ordinal: 0,
+        delta: "Hello there. ",
+      });
+      fire("session.idle", { sessionID: "ses_NEW" });
+    }
+    if (!fastReply) emitReply();
+    await sleep(50);
+    assert.ok(
+      spoken.some((s) => /Hello there/.test(s)),
+      `expected streamed sentence spoken, got ${JSON.stringify(spoken)}`,
+    );
+    await sleep(100);
+    // Streamed path flushes the tail; the full-turn fallback must NOT run.
+    assert.equal(turnSpoken, 0);
+    assert.ok(
+      fake.toasts.some((t) => /to talk/.test(t?.message || "")),
+      "expected paused resting toast after spoken reply",
+    );
+    assert.equal(convo.controller.isActive(), true);
+    adapted.cleanup();
+    assert.equal(convo.controller.isActive(), false);
+  });
+}

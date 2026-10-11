@@ -61,7 +61,8 @@ export default {
         // append-to-composer API, so every STT turn submits immediately.
         const notice =
           "Voice on OpenCode v2: transcripts submit immediately as-is " +
-          "(submit-only mode — append-for-edit is unavailable on v2)";
+          "(submit-only mode — append-for-edit is unavailable on v2). " +
+          "For live preview, set sttMode to streaming.";
         adapted.api.ui.toast({ message: notice, variant: "warning", duration: 8000 });
         logger?.log?.("plugin", `v2 submit-only mode: ${notice}`, "warn");
         // v2 has no client.app.log, so the logger above is a no-op: compat

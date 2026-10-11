@@ -64,14 +64,13 @@ under the `opencode-voice` group with their slash names (`/stt-record`,
 `/tts-speak`, `/voice-cancel`, …), verified live on 2.0.26.
 
 > [!NOTE]
-> **Default keybinds on v2.** The defaults (`<leader>[`, `<leader>.`, …)
-> display correctly in the palette (translated to `ctrl+x [` style, since v2
-> bind strings have no `<leader>` token) but multi-key sequences do not
-> dispatch on 2.0.26 — only single-combo binds fire (verified: an overridden
-> `"keybinds": { "voice.cancel": "ctrl+r" }` runs the command, while
-> `ctrl+x .` stays silent). Until the host fixes sequence dispatch, override
-> any keybind you need with a single combo via the `keybinds` option; every
-> command stays reachable via palette and `/slash` regardless.
+> **Default keybinds on v2.** The same leader shortcuts work on both hosts:
+> press `Ctrl+X`, then `[` to record/stop, `]` to read the reply, `;` to stop
+> playback, `v` for conversation, or `.` to cancel. The v2 keymap resolves
+> `<leader>` itself, including a customized host leader. Record/stop and cancel
+> dispatch were verified on v2.0.26 on both home and session screens. Plugin
+> `keybinds` overrides and `"none"` still apply; palette and `/slash` remain
+> available.
 
 `engines` status: the package declares no `engines.opencode` field, so both
 v1 and v2 load it unconstrained. A version pin was considered and skipped on
@@ -85,13 +84,21 @@ capability detection already picks the right path per host.
   every one reliably; the `Ctrl+P` palette shows them for matching queries
   but its search occasionally reports no results for queries that should
   match — when in doubt, use `/slash`.
-- **STT (batch):** submits immediately, no edit step (see above). With no
-  active session the transcript is kept via warning toast and nothing is
-  submitted.
-- **STT (streaming dictation):** live composer previews and finalize-insert
-  have no v2 primitive, so finalizing keeps the dictated text via toast
-  instead of inserting or submitting. Untested on v2 beyond that — prefer
-  batch mode there.
+- **STT (batch):** submits immediately, no edit step (see above). Recording
+  from home creates a session only when final text is ready, opens it, and
+  submits once. The selected model is carried into the new session; existing
+  sessions retain their agent/model. On home, v2's public plugin API exposes
+  the selected model but no selected-agent getter, so session creation uses
+  the host's default agent. Create/submit failures show the full transcript in
+  a recovery dialog. Cancelling before submission drops the captured text.
+- **STT (streaming dictation):** enable with `"sttMode": "streaming"` in plugin
+  options. Local whisper streaming displays a bounded live transcript above
+  the prompt footer on home and session screens. Stable words are plain;
+  the tentative tail is bracketed and may change. Press the record key again
+  to finalize and submit once, or cancel to clear the preview without sending.
+  No composer edit step is promised on v2. Batch remains the default and
+  produces text after recording stops; the hosted `sttEndpoint` option is for
+  batch transcription, not this local streaming preview.
 - **TTS / conversation / live notes / cancel:** same semantics as v1 (auto
   TTS on idle/permission/question gates, conversation barge-in, live-notes
   background saves, one-key cancel).
@@ -740,7 +747,8 @@ Idle invocations toast `Nothing to cancel`. Keybind override:
 
 Live local dictation for short prompts: the mic stays on, partial
 transcriptions stream in as you speak, and one press of `/stt-record`
-finalizes the text into the prompt box. Set `"sttMode": "streaming"` in the
+finalizes the text into the prompt box on v1, or submits it once on v2.
+Set `"sttMode": "streaming"` in the
 plugin options (default `"batch"` keeps the record-then-transcribe flow
 exactly as before).
 
@@ -754,7 +762,11 @@ What you see: a sticky status toast stays up for the whole session so
 there is never a silent gap — `Loading speech model…` during cold start,
 `● Streaming dictation — listening` with an elapsed timer while live
 (plus a `(listening…)` note when inference runs slow), and `Finalizing…`
-between the second keypress and the insert. The OpenCode renderer only
+between the second keypress and finalization. On v2, a bounded transcript
+above the prompt footer updates during recording: stable words are plain,
+tentative words are bracketed. Finalization submits directly to the active
+session (or creates one from home); cancel clears the preview without sending.
+On v1, the OpenCode renderer only
 exposes `insertText`/`submit`, with no live range-replacement API, so
 partials render as preview toasts (`🎙 ...`) alongside (not instead of)
 the sticky status, and the full text is inserted EXACTLY ONCE at
@@ -784,8 +796,9 @@ Options:
 - `sttMode` _(optional, default `"batch"`)_ - `"streaming"` selects this mode
 - `sttStreamWindowMs` _(optional, default `10000`)_ - rolling audio window
 - `sttStreamStepMs` _(optional, default `1000`)_ - live transcription cadence
-- `sttAutoSubmit` applies after streaming finalize (submit via the dictated
-  field only, as above)
+- `sttAutoSubmit` applies after streaming finalize on v1 (submit via the
+  dictated field only, as above). v2 always submits final text because there
+  is no composer append/edit API.
 
 Measured latencies (Apple M3 Pro, 36 GB, whisper.cpp 1.9.4 with Metal,
 `ggml-large-v3-turbo-q5_0.bin`, scripted speech through the real
@@ -806,11 +819,14 @@ at roughly that rate, not every cadence tick — the scheduler coalesces
 while inference is busy, so partials are flicker-free but not instant.
 Only one smaller-model data point exists (none: no smaller model file is
 installed locally, and nothing was downloaded for measurement). E2E
-coverage is mic-less/TUI-less by necessity: session flows are proven
+coverage is mic-less: v1 session flows are proven
 through the real command paths with faked capture/renderer
 (`test/streaming-e2e.test.js`, `test/streaming-gaps.test.js`), while the
 numbers above come from the real server path with scripted audio — no
-live-mic session was measured.
+live-mic session was measured. v2 preview rendering was additionally verified
+in the real v2.0.26 TUI using injected stable/tentative text on home and
+session screens; final-once/cancellation flows use scripted capture and the
+real streaming controller in `test/v2-preview.test.js`.
 
 ## How it works
 
