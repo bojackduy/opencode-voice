@@ -1,17 +1,18 @@
-// OpenCode v2 submit-only compatibility: adapter + setup entry tests.
+// OpenCode v2 compatibility: adapter + setup entry tests.
 //
 // Surface fakes below are CONTRACT-F AKES (shaped from the v2
-// `@opencode/plugin@2.0.26` + `@opencode/client@2.0.26` .d.ts in the research
-// sandbox), not recordings of a live v2 host — see header comments marking
-// each OBSERVED-v2 fact (verified in types) vs fake choice. No mic, audio,
-// model downloads, or real host involved: `session.prompt` and
-// `dialog.select` are faked, transcription/synthesis never run.
+// `@opencode/plugin@2.1.3` + `@opencode/client@2.1.3` .d.ts), not recordings
+// of a live v2 host — see header comments marking each OBSERVED-v2 fact
+// (verified in types) vs fake choice. No mic, audio, model downloads, or real
+// host involved: `session.prompt` and `dialog.select` are faked,
+// transcription/synthesis never run.
 
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import plugin from "../index.js";
 import { adaptV2Context, isV2Context } from "../lib/v2-compat.js";
+import { resolveVoiceProviderModel } from "../lib/voice-model.js";
 
 // OBSERVED-v2: Context carries keymap.layer + ui.toast.show + storage;
 // a v1 api carries none of those paths.
@@ -49,7 +50,11 @@ function makeV2(overrides = {}) {
   const dialogCalls = [];
   const dialogResolutions = [];
   const storeState = { values: {} };
+  // ACTUAL-v2: providers and models are separate location collections;
+  // `ProviderInfo` has no `models` field.
   const providers = overrides.providers || [];
+  const models = overrides.models || [];
+  const integrations = overrides.integrations || [];
   // Live array ref, like the host's reactive view: tests may push messages.
   const v2messages = overrides.messages || [V2_USER_MSG, V2_ASSISTANT_MSG];
   const sessions = overrides.sessions || [{ id: "ses_V2", title: "V2 session" }];
@@ -59,7 +64,7 @@ function makeV2(overrides = {}) {
     // `.directory` with a cwd fallback.
     location: { directory: "/tmp" },
     app: { version: "2.0.26-test", channel: "test" },
-    renderer: {},
+    renderer: overrides.renderer || { currentFocusedRenderable: null },
     client: {
       session: {
         list: async () => ({ data: [] }),
@@ -99,7 +104,11 @@ function makeV2(overrides = {}) {
           get: (sessionID, messageID) => v2messages.find((m) => m?.id === messageID),
         },
       },
-      location: { provider: { list: () => providers } },
+      location: {
+        provider: { list: () => providers },
+        model: { list: () => models },
+        integration: { list: () => integrations },
+      },
     },
     // OBSERVED-v2: keymap.layer(factory) with KeymapCommand
     // {id,title,group,bind,palette,slash,run} + layer bindings.
@@ -276,55 +285,87 @@ test("v2 setup registers every header-block command by name", async () => {
   assert.equal(byId["tts.speak-last"]?.bind, "<leader>]");
   assert.equal(byId["voice.conversation"]?.bind, "<leader>v");
   assert.ok(!("bind" in (byId["stt.model"] || {})), "unbound command must omit bind");
-  // First-run submit-only notice: toast (up front, not buried) + log path.
+  // First-run focus notice: text is inserted at the focused cursor, not sent.
   assert.ok(
-    fake.toasts.some((t) => /submit-only/i.test(t?.message || "")),
-    "expected submit-only first-run toast",
+    fake.toasts.some((t) => /focused text field/i.test(t?.message || "")),
+    "expected focused-input first-run toast",
+  );
+  assert.ok(
+    fake.toasts.every((t) => !/submit immediately/i.test(t?.message || "")),
+    "must not claim transcripts are submitted on v2",
   );
   await cleanup();
 });
 
-test("v2 STT smoke: append becomes session.prompt submit (marker, quiet shim)", async () => {
+test("v2 STT smoke: append retains without focus, explicit submit prompts", async () => {
   const fake = makeV2();
   const adapted = adaptV2Context(fake.ctx);
-  // Both v1 call shapes used by stt.js must submit and report the marker.
+  // No editable field focused: a plain append is retained in a recovery
+  // dialog and NEVER sent as a prompt. Both v1 call shapes are accepted.
   const r1 = await adapted.api.client.tui.appendPrompt({ body: { text: "hello v2" } });
   const r2 = await adapted.api.client.tui.appendPrompt({ text: "second shape" });
-  assert.equal(r1?.submitted, true);
-  assert.equal(r2?.submitted, true);
-  assert.equal(fake.prompts.length, 2);
-  assert.deepEqual(fake.prompts[0], { sessionID: "ses_V2", text: "hello v2" });
-  assert.deepEqual(fake.prompts[1], { sessionID: "ses_V2", text: "second shape" });
-  // The shim itself stays quiet: the caller's turn toast reports the submit
-  // (one toast per turn, keyed off the marker above).
-  assert.equal(fake.toasts.length, 0);
-  // Renderer is null by construction so the focused-input insert path is
-  // skipped and nothing can fake an edit step.
-  assert.equal(adapted.api.renderer, null);
+  assert.equal(r1?.retained, true);
+  assert.equal(r2?.retained, true);
+  assert.equal(fake.prompts.length, 0);
+  assert.deepEqual(
+    fake.alerts.map((a) => a.message),
+    ["hello v2", "second shape"],
+  );
+  // An explicit submit still goes out through session.prompt.
+  const r3 = await adapted.api.client.tui.appendPrompt({ text: "send me", submit: true });
+  assert.equal(r3?.submitted, true);
+  assert.deepEqual(fake.prompts, [{ sessionID: "ses_V2", text: "send me" }]);
+  // The live renderer is forwarded so the shared insert path works.
+  assert.equal(adapted.api.renderer, fake.ctx.renderer);
+});
+
+test("v2 focused renderable receives dictation at the cursor without submitting", async () => {
+  const fake = makeV2();
+  let typed = "";
+  let submits = 0;
+  fake.ctx.renderer.currentFocusedRenderable = {
+    insertText: (text) => void (typed += text),
+    submit: () => void (submits += 1),
+  };
+  const adapted = adaptV2Context(fake.ctx);
+  const { insertIntoFocusedInput } = await import("../lib/stt.js");
+  // Plain dictation types at the cursor and never presses Enter, regardless
+  // of which TUI field owns focus (composer, dialog search, plugin input).
+  assert.equal(insertIntoFocusedInput(adapted.api.renderer, "dictated words"), true);
+  assert.equal(typed, "dictated words");
+  assert.equal(submits, 0, "plain dictation must not press Enter");
+  assert.equal(fake.prompts.length, 0);
+  assert.equal(fake.alerts.length, 0);
+  // An explicit submit presses the focused field's own Enter.
+  assert.equal(insertIntoFocusedInput(adapted.api.renderer, "!", true), true);
+  assert.equal(submits, 1);
+  assert.equal(fake.prompts.length, 0);
 });
 
 test("v2 STT turn toast: real stt.js submit path prompts + toasts submit", async () => {
   // End-to-end minus mic: drive the real registerSTT controller over the
-  // adapted api and prove session.prompt is called and the user-facing toast
-  // says submitted (not "added to prompt"). The /stt-record append path
-  // shares the same shim marker; its toast branch ("submitted as-is
-  // (submit-only mode)") is selected off that marker in appendTurnText.
+  // adapted api and prove an explicit submit calls session.prompt and the
+  // toast says submitted. Conversation submits are NOT dictation: they must
+  // never type into whatever field happens to be focused (a permission
+  // dialog could own it).
   const fake = makeV2();
   const adapted = adaptV2Context(fake.ctx);
+  let typed = "";
+  fake.ctx.renderer.currentFocusedRenderable = {
+    insertText: (text) => void (typed += text),
+    submit() {},
+  };
   const { registerSTT } = await import("../lib/stt.js");
   const complete = async () => ({ text: null, error: "unavailable" });
   const stt = registerSTT(adapted.api, adapted.api.kv, complete, {}, {}, { log: () => {} });
   const result = await stt.controller.submitTurnText("hello turn");
   assert.equal(result?.text, "hello turn");
+  assert.equal(typed, "", "conversation submit must not press Enter in a focused field");
   assert.equal(fake.prompts.length, 1);
   assert.deepEqual(fake.prompts[0], { sessionID: "ses_V2", text: "hello turn" });
   assert.ok(
     fake.toasts.some((t) => /Transcription submitted/.test(t?.message || "")),
     "expected submitted toast from real stt.js turn path",
-  );
-  assert.ok(
-    fake.toasts.every((t) => !/added to prompt/i.test(t?.message || "")),
-    "must never claim an edit-step append on v2",
   );
 });
 
@@ -334,14 +375,15 @@ test("v2 home creates and navigates only for final text, submits once with selec
   fake.ctx.ui.model = { current: () => ({ providerID: "p", modelID: "chosen", variant: "fast" }) };
   const adapted = adaptV2Context(fake.ctx);
   assert.equal(fake.creates.length, 0);
-  const send = () => adapted.api.client.tui.appendPrompt({ text: "captured home turn" });
+  const send = () =>
+    adapted.api.client.tui.appendPrompt({ text: "captured home turn", submit: true });
   await Promise.all([send(), send()]);
   const model = { providerID: "p", id: "chosen", variant: "fast" };
   assert.deepEqual(fake.creates, [{ location: fake.ctx.location, model }]);
   assert.deepEqual(fake.navigations, [{ type: "session", sessionID: "ses_NEW" }]);
   assert.deepEqual(fake.prompts, [{ sessionID: "ses_NEW", text: "captured home turn" }]);
   assert.equal(adapted.api.route.current.params.sessionID, "ses_NEW");
-  await adapted.api.client.tui.appendPrompt({ text: "second turn" });
+  await adapted.api.client.tui.appendPrompt({ text: "second turn", submit: true });
   assert.equal(fake.creates.length, 1);
   assert.equal(fake.prompts.length, 2);
   assert.equal(fake.prompts[1].sessionID, "ses_NEW");
@@ -356,12 +398,15 @@ test("v2 create failure retains complete transcript visibly and allows retry", a
   };
   const adapted = adaptV2Context(fake.ctx);
   const text = "Retained full transcript. ".repeat(30);
-  await assert.rejects(() => adapted.api.client.tui.appendPrompt({ text }), /create unavailable/);
+  await assert.rejects(
+    () => adapted.api.client.tui.appendPrompt({ text, submit: true }),
+    /create unavailable/,
+  );
   assert.deepEqual(fake.alerts, [{ title: "Voice transcript — not submitted", message: text }]);
   assert.equal(fake.prompts.length, 0);
   assert.equal(fake.navigations.length, 0);
   fake.ctx.client.session.create = create;
-  await adapted.api.client.tui.appendPrompt({ text });
+  await adapted.api.client.tui.appendPrompt({ text, submit: true });
   assert.equal(fake.prompts.length, 1);
 });
 
@@ -378,6 +423,7 @@ test("v2 home submission cancellation and disposal fence a pending create", asyn
     let current = true;
     const sent = adapted.api.client.tui.appendPrompt({
       text: "must not send",
+      submit: true,
       isCurrent: () => current,
     });
     if (dispose) adapted.cleanup();
@@ -394,9 +440,13 @@ test("v2 empty or already cancelled text never creates a session", async () => {
   const fake = makeV2();
   fake.ctx.ui.router.current = () => ({ type: "home" });
   const adapted = adaptV2Context(fake.ctx);
-  await assert.rejects(() => adapted.api.client.tui.appendPrompt({ text: "" }), /No transcript/);
   await assert.rejects(
-    () => adapted.api.client.tui.appendPrompt({ text: "stale", isCurrent: () => false }),
+    () => adapted.api.client.tui.appendPrompt({ text: "", submit: true }),
+    /No transcript/,
+  );
+  await assert.rejects(
+    () =>
+      adapted.api.client.tui.appendPrompt({ text: "stale", submit: true, isCurrent: () => false }),
     /cancelled/,
   );
   assert.equal(fake.creates.length, 0);
@@ -482,7 +532,23 @@ test("v2 event remap: v1 names subscribe to v2 types with properties envelope", 
 
 test("v2 route/state/kv shims keep v1 call shapes working", async () => {
   const fake = makeV2({
-    providers: [{ id: "p1", name: "P1", models: {}, env: [] }],
+    providers: [
+      {
+        id: "p1",
+        name: "P1",
+        integrationID: "p1",
+        activation: "auto",
+        package: "@ai-sdk/openai-compatible",
+        settings: { baseURL: "https://p1.test/v1" },
+      },
+    ],
+    models: [
+      { id: "m1", modelID: "upstream-m1", providerID: "p1", name: "Model One" },
+      { id: "other", modelID: "other", providerID: "p2", name: "Other provider" },
+    ],
+    integrations: [
+      { id: "p1", name: "P1", methods: [{ type: "env", names: ["P1_API_KEY"] }], connections: [] },
+    ],
     messages: [],
     sessions: [{ id: "ses_V2", title: "V2 session" }],
   });
@@ -491,10 +557,23 @@ test("v2 route/state/kv shims keep v1 call shapes working", async () => {
   assert.deepEqual(adapted.api.state.session.messages("ses_V2"), []);
   assert.equal(adapted.api.state.part("m1").length, 0);
   assert.ok(adapted.api.state.path.directory.length > 0);
+  // v1 provider shape is recombined from three v2 collections: models from
+  // location.model, env names from the integration's env method, and the
+  // endpoint from settings. Without it /voice-model reports "no models".
+  const [provider] = adapted.api.state.provider;
   assert.equal(adapted.api.state.provider.length, 1);
+  assert.deepEqual(Object.keys(provider.models), ["m1"]);
+  assert.equal(provider.models.m1.name, "Model One");
+  assert.deepEqual(provider.env, ["P1_API_KEY"]);
+  assert.equal(provider.options.baseURL, "https://p1.test/v1");
   assert.equal(adapted.api.kv.get("missing.key", "fb"), "fb");
   adapted.api.kv.set("voice.providerID", "p1");
   assert.equal(adapted.api.kv.get("voice.providerID"), "p1");
+  // The voice picker + resolver round-trip works on the adapted surface.
+  adapted.api.kv.set("voice.modelID", "m1");
+  const resolved = resolveVoiceProviderModel(adapted.api, adapted.api.kv);
+  assert.equal(resolved.provider.id, "p1");
+  assert.equal(resolved.model.name, "Model One");
 });
 
 test("v2 TTS smoke: speak command degrades honestly with no content", async () => {

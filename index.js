@@ -1,9 +1,9 @@
 // opencode-voice: Speech-to-text and text-to-speech for OpenCode.
 //
 // STT: Record voice via sox, transcribe with whisper-cpp, normalize with
-//      an OpenAI-compatible LLM, append to the TUI prompt (v1) or submit
-//      immediately via session.prompt (v2 submit-only mode, see README
-//      "OpenCode v1 and v2").
+//      an OpenAI-compatible LLM, and insert the text at the cursor of the
+//      focused input (composer, dialog search, or plugin field) on both
+//      hosts. Explicit submits only: /stt-submit, sttAutoSubmit, conversation.
 //
 // TTS: Auto-speak assistant responses (or read on demand) via Piper,
 //      with LLM normalization for natural speech.
@@ -46,7 +46,8 @@ import { adaptV2Context } from "./lib/v2-compat.js";
 // Dual-compat export: v1's loader reads `tui`, v2's reads `setup`
 // (`Plugin.define` is an identity wrapper, so a plain object carries both).
 // Each host ignores the other's key. The core (`bootVoice`) is shared; v2
-// runs it over the v2-compat adapted api in submit-only mode.
+// runs it over the v2-compat adapted api, which forwards the live renderer
+// so dictation lands in whatever input currently has focus.
 export default {
   id: "opencode-voice",
   tui: async (api, options) => {
@@ -55,16 +56,16 @@ export default {
   setup: async (ctx) => {
     const adapted = adaptV2Context(ctx);
     await bootVoice(adapted.api, ctx.options, {
-      submitOnly: true,
+      v2: true,
       onReady: async ({ logger }) => {
-        // First-run submit-only notice (required UX disclosure): v2 has no
-        // append-to-composer API, so every STT turn submits immediately.
+        // First-run v2 notice (required UX disclosure): text is typed into
+        // the focused field and is never sent automatically.
         const notice =
-          "Voice on OpenCode v2: transcripts submit immediately as-is " +
-          "(submit-only mode — append-for-edit is unavailable on v2). " +
-          "For live preview, set sttMode to streaming.";
+          "Voice on OpenCode v2: transcripts are inserted at the cursor of the focused text field " +
+          "(prompt, search, or dialog input) and are not sent automatically. " +
+          "Set sttAutoSubmit to submit after recording.";
         adapted.api.ui.toast({ message: notice, variant: "warning", duration: 8000 });
-        logger?.log?.("plugin", `v2 submit-only mode: ${notice}`, "warn");
+        logger?.log?.("plugin", `v2 focused-input mode: ${notice}`, "warn");
         // v2 has no client.app.log, so the logger above is a no-op: compat
         // warnings must surface as a toast or they are lost entirely.
         if (adapted.warnMessages.length > 0) {

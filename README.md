@@ -18,13 +18,13 @@ One package runs on both OpenCode 1.x and 2.x. The plugin detects the host
 by capability (never by version string) and adapts; the v1 path is unchanged.
 
 > [!IMPORTANT]
-> **Submit-only mode on v2.** OpenCode v2.0.26 exposes no plugin API for
-> appending text to the composer for editing, so the v1 STT loop of
-> transcribe → append → edit → submit is unimplementable there. On v2 every
-> STT turn **transcribes and submits immediately** via `session.prompt` —
-> both `/stt-record` and `/stt-submit` submit — and the turn toast says
-> submitted, never "added to prompt". A warning toast on first load says the
-> same. There is deliberately no edit step; nothing is faked.
+> **Dictation inserts; it does not send.** On both v1 and v2 the transcript
+> is typed at the cursor of whichever editable field currently has focus —
+> the session composer, a dialog/search input, or another plugin's text
+> field — leaving the text editable. Nothing is submitted unless you asked
+> for it (`/stt-submit`, `sttAutoSubmit`, or conversation mode). If no
+> editable field is focused, v2 keeps the transcript in a recovery dialog
+> instead of sending it as a prompt.
 
 ### v1 (OpenCode 1.x)
 
@@ -84,21 +84,25 @@ capability detection already picks the right path per host.
   every one reliably; the `Ctrl+P` palette shows them for matching queries
   but its search occasionally reports no results for queries that should
   match — when in doubt, use `/slash`.
-- **STT (batch):** submits immediately, no edit step (see above). Recording
-  from home creates a session only when final text is ready, opens it, and
-  submits once. The selected model is carried into the new session; existing
-  sessions retain their agent/model. On home, v2's public plugin API exposes
-  the selected model but no selected-agent getter, so session creation uses
-  the host's default agent. Create/submit failures show the full transcript in
-  a recovery dialog. Cancelling before submission drops the captured text.
+- **STT (batch):** the transcript is typed at the cursor of the focused
+  editable field and nothing is sent unless submission is requested.
+  On home the composer is focused, so dictation works before a session
+  exists; an explicit submit creates the session, carries the selected
+  model into it, and sends once. Existing sessions retain their
+  agent/model. On home, v2's public plugin API exposes the selected model
+  but no selected-agent getter, so session creation uses the host's
+  default agent. Create/submit failures show the full transcript in a
+  recovery dialog. With no editable field focused, the transcript is kept
+  in that dialog instead of being sent as a prompt.
 - **STT (streaming dictation):** enable with `"sttMode": "streaming"` in plugin
   options. Local whisper streaming displays a bounded live transcript above
   the prompt footer on home and session screens. Stable words are plain;
   the tentative tail is bracketed and may change. Press the record key again
-  to finalize and submit once, or cancel to clear the preview without sending.
-  No composer edit step is promised on v2. Batch remains the default and
-  produces text after recording stops; the hosted `sttEndpoint` option is for
-  batch transcription, not this local streaming preview.
+  to finalize: the full text is inserted once at the focused cursor (and
+  submitted when `sttAutoSubmit` is set), or cancel to clear the preview
+  without sending. Batch remains the default and produces text after
+  recording stops; the hosted `sttEndpoint` option is for batch
+  transcription, not this local streaming preview.
 - **TTS / conversation / live notes / cancel:** same semantics as v1 (auto
   TTS on idle/permission/question gates, conversation barge-in, live-notes
   background saves, one-key cancel).
@@ -747,7 +751,7 @@ Idle invocations toast `Nothing to cancel`. Keybind override:
 
 Live local dictation for short prompts: the mic stays on, partial
 transcriptions stream in as you speak, and one press of `/stt-record`
-finalizes the text into the prompt box on v1, or submits it once on v2.
+finalizes the text at the focused cursor on both hosts.
 Set `"sttMode": "streaming"` in the
 plugin options (default `"batch"` keeps the record-then-transcribe flow
 exactly as before).
@@ -764,18 +768,18 @@ there is never a silent gap — `Loading speech model…` during cold start,
 (plus a `(listening…)` note when inference runs slow), and `Finalizing…`
 between the second keypress and finalization. On v2, a bounded transcript
 above the prompt footer updates during recording: stable words are plain,
-tentative words are bracketed. Finalization submits directly to the active
-session (or creates one from home); cancel clears the preview without sending.
-On v1, the OpenCode renderer only
+tentative words are bracketed. Finalization inserts the full text once at
+the focused cursor; cancel clears the preview without sending.
+The OpenCode renderer only
 exposes `insertText`/`submit`, with no live range-replacement API, so
 partials render as preview toasts (`🎙 ...`) alongside (not instead of)
 the sticky status, and the full text is inserted EXACTLY ONCE at
-finalize. If no editable field is focused, the transcript is kept via
-toast instead of being redirected into the chat. `/stt-submit` submits
-only through the dictated field's own `submit()` — a field that cannot
-submit keeps its text un-submitted rather than falling through to the
-primary chat. `/stt-stop` cancels and removes only plugin-dictated
-text, never your typed prefix/suffix.
+finalize. If no editable field is focused, the transcript is kept visibly
+(v2 recovery dialog, v1 toast) instead of being redirected into the chat.
+`/stt-submit` submits only through the dictated field's own `submit()` — a
+field that cannot submit keeps its text un-submitted rather than falling
+through to the primary chat. `/stt-stop` cancels and removes only
+plugin-dictated text, never your typed prefix/suffix.
 
 Warm server: the whisper model stays loaded across dictations (finalize
 and cancel keep the lease); it reloads only on model/language change,
@@ -796,9 +800,8 @@ Options:
 - `sttMode` _(optional, default `"batch"`)_ - `"streaming"` selects this mode
 - `sttStreamWindowMs` _(optional, default `10000`)_ - rolling audio window
 - `sttStreamStepMs` _(optional, default `1000`)_ - live transcription cadence
-- `sttAutoSubmit` applies after streaming finalize on v1 (submit via the
-  dictated field only, as above). v2 always submits final text because there
-  is no composer append/edit API.
+- `sttAutoSubmit` applies after streaming finalize on both hosts (submit via
+  the dictated field only, as above).
 
 Measured latencies (Apple M3 Pro, 36 GB, whisper.cpp 1.9.4 with Metal,
 `ggml-large-v3-turbo-q5_0.bin`, scripted speech through the real
@@ -839,10 +842,11 @@ real streaming controller in `test/v2-preview.test.js`.
 3. LLM normalizes the transcription: fixes punctuation, removes filler words,
    corrects software engineering homophones ("Jason" to "JSON", "bullion" to
    "boolean", etc.)
-4. Cleaned text is appended to the OpenCode prompt, or submitted immediately
-   when `/stt-submit` is used. If normalization fails (e.g. LLM endpoint
-   unreachable), the raw transcription is used as a fallback so you never lose
-   your input
+4. Cleaned text is inserted at the cursor of the focused editable field
+   (composer, search, or plugin input), or submitted immediately when
+   `/stt-submit` (or `sttAutoSubmit`) is used. If normalization fails (e.g.
+   LLM endpoint unreachable), the raw transcription is used as a fallback
+   so you never lose your input
 
 ### TTS pipeline
 

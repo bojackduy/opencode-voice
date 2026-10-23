@@ -313,6 +313,21 @@ test("resolves voice-selected provider to endpoint config", () => {
   assert.equal(resolveProviderConfig(null, model), null);
 });
 
+test("prefers the upstream modelID when a v2 model carries both ids", () => {
+  const provider = {
+    id: "p1",
+    env: ["P1_API_KEY"],
+    // The v2 adapter maps ProviderInfo.settings into the v1 `options` shape.
+    options: { baseURL: "https://p1.test/v1" },
+  };
+  const model = { id: "alias-id", modelID: "upstream-id", providerID: "p1" };
+  assert.deepEqual(resolveProviderConfig(provider, model), {
+    endpoint: "https://p1.test/v1",
+    model: "upstream-id",
+    apiKeyEnv: "P1_API_KEY",
+  });
+});
+
 test("falls back to model api url when provider has no baseURL", () => {
   const provider = { id: "custom", env: [], options: {} };
   const model = { id: "m1", api: { url: "https://llm.test/v1" } };
