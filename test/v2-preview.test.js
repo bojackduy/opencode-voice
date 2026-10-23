@@ -80,7 +80,7 @@ test("v2 slot preview distinguishes stable/tentative, bounds display, clears cla
   await preview.begin();
   assert.deepEqual(
     h.claims.map((c) => c.after || c.before),
-    ["prompt.footer"],
+    ["session.composer.top", "home.footer"],
   );
   for (const c of h.claims) c.render();
   preview.applyPartial({ stableText: "confirmed words", tentativeText: "uncertain tail" });
