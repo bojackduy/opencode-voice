@@ -6,8 +6,13 @@ import test from "node:test";
 
 import {
   __clearProcessingToastState,
+  __clearRecordingToastState,
+  __clearStreamingToastState,
   __resetStreamWave,
   __setProcessingToastFn,
+  __setRecordingToastFn,
+  __setStreamingToastFn,
+  __setToastPolling,
   NOTES_SYSTEM_PROMPT,
   STT_SYSTEM_PROMPT,
   STT_SYSTEM_PROMPT_STRICT,
@@ -21,6 +26,8 @@ import {
   isLikelyWhisperHallucination,
   isOpenRouterEndpoint,
   isProcessingToastActive,
+  isRecordingToastActive,
+  isStreamingToastActive,
   isSttBusy,
   isWSL,
   needsContext,
@@ -28,9 +35,12 @@ import {
   parsePactlSourcesShort,
   selectSttSystemPrompt,
   showProcessingToast,
+  showRecordingToast,
+  showStreamingToast,
   transcribeApiFile,
   transcribeFileLocal,
   updateProcessingToast,
+  updateStreamingToast,
   waveLevelsFromPcm,
 } from "../lib/stt.js";
 
@@ -99,6 +109,29 @@ test("processing toast stays active until cleared", () => {
     assert.equal(isProcessingToastActive(), false);
   } finally {
     __clearProcessingToastState();
+  }
+});
+
+test("v2 one-shot toast mode never starts polling timers", () => {
+  const seen = [];
+  __setRecordingToastFn((input) => seen.push(input));
+  __setStreamingToastFn((input) => seen.push(input));
+  __setToastPolling(false);
+  try {
+    showRecordingToast();
+    assert.equal(seen.length, 1);
+    assert.equal(isRecordingToastActive(), false);
+    assert.match(seen[0].message, /● Recording · .* to stop$/);
+
+    showStreamingToast("Loading speech model…");
+    assert.equal(seen.length, 2);
+    assert.equal(isStreamingToastActive(), false);
+    updateStreamingToast("Listening");
+    assert.equal(seen.length, 3);
+  } finally {
+    __setToastPolling(true);
+    __clearRecordingToastState();
+    __clearStreamingToastState();
   }
 });
 
