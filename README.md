@@ -96,7 +96,8 @@ capability detection already picks the right path per host.
   in that dialog instead of being sent as a prompt.
 - **STT (streaming dictation):** enable with `"sttMode": "streaming"` in plugin
   options. Local whisper streaming displays a bounded live transcript above
-  the prompt footer on home and session screens. Stable words are plain;
+  the prompt footer on home and session screens, with the live input waveform
+  beside it. Stable words are plain;
   the tentative tail is bracketed and may change. Press the record key again
   to finalize: the full text is inserted once at the focused cursor (and
   submitted when `sttAutoSubmit` is set), or cancel to clear the preview
@@ -767,9 +768,10 @@ there is never a silent gap — `Loading speech model…` during cold start,
 `● Streaming dictation — listening` with an elapsed timer while live
 (plus a `(listening…)` note when inference runs slow), and `Finalizing…`
 between the second keypress and finalization. On v2, a bounded transcript
-above the prompt footer updates during recording: stable words are plain,
-tentative words are bracketed. Finalization inserts the full text once at
-the focused cursor; cancel clears the preview without sending.
+above the prompt footer updates during recording, with the live input
+waveform beside it: stable words are plain, tentative words are bracketed.
+Finalization inserts the full text once at the focused cursor; cancel clears
+the preview without sending.
 The OpenCode renderer only
 exposes `insertText`/`submit`, with no live range-replacement API, so
 partials render as preview toasts (`🎙 ...`) alongside (not instead of)

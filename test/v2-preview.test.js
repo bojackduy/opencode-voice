@@ -38,6 +38,7 @@ function host() {
         return () => claims.splice(claims.indexOf(claim), 1);
       },
     },
+    renderer: { currentFocusedRenderable: null },
     storage: { store: () => [{ values: {} }, () => {}] },
   };
   const runtime = {
@@ -84,6 +85,8 @@ test("v2 slot preview distinguishes stable/tentative, bounds display, clears cla
   for (const c of h.claims) c.render();
   preview.applyPartial({ stableText: "confirmed words", tentativeText: "uncertain tail" });
   assert.match(h.frames.at(-1), /confirmed words \[uncertain tail\]/);
+  preview.applyLevels([0, 1, 2, 3, 4, 5, 6, 7, 7, 6, 5, 4, 3, 2, 1, 0]);
+  assert.match(h.frames.at(-1), /^▁▂▃▄▅▆▇██▇▆▅▄▃▂▁  Voice live · confirmed words/);
   preview.applyPartial({ stableText: "long ".repeat(800), tentativeText: "tail" });
   assert.ok(h.frames.at(-1).length <= 1600);
   assert.ok(preview.getTranscript().length > 1600, "full final text is never truncated");
@@ -91,7 +94,27 @@ test("v2 slot preview distinguishes stable/tentative, bounds display, clears cla
   assert.equal(h.claims.length, 0);
   const before = h.frames.length;
   preview.applyPartial({ stableText: "late" });
+  preview.applyLevels([7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7]);
   assert.equal(h.frames.length, before);
+  h.adapted.cleanup();
+});
+
+test("v2 preview wave timer redraws with levels and stops on clear", async () => {
+  const h = host();
+  const preview = h.adapted.api.voicePreview;
+  await preview.begin();
+  for (const c of h.claims) c.render();
+  preview.startWave(() => [7, 6, 5, 4, 3, 2, 1, 0, 0, 1, 2, 3, 4, 5, 6, 7], 20);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.ok(
+    h.frames.some((frame) => frame.startsWith("█▇▆▅▄▃▂▁▁▂▃▄▅▆▇█  Voice live")),
+    "wave bars render before the transcript",
+  );
+  preview.clear();
+  const before = h.frames.length;
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.equal(h.frames.length, before, "clear stops the wave timer");
+  assert.equal(h.claims.length, 0);
   h.adapted.cleanup();
 });
 
@@ -113,8 +136,14 @@ test("v2 preview cancelled during runtime import never mounts stale UI", async (
   h.adapted.cleanup();
 });
 
-test("v2 real streaming controller previews partials on home, submits final once, cancels none", async () => {
+test("v2 real streaming controller previews partials and inserts final once, never prompts", async () => {
   const h = host();
+  const inserted = [];
+  const submitted = [];
+  h.ctx.renderer.currentFocusedRenderable = {
+    insertText: (text) => inserted.push(text),
+    submit: () => submitted.push(1),
+  };
   const scheduled = new Map();
   let id = 0;
   const clock = {
@@ -174,86 +203,88 @@ test("v2 real streaming controller previews partials on home, submits final once
   const first = stt.controller.finalizeStreaming();
   const second = stt.controller.finalizeStreaming();
   await Promise.all([first, second]);
-  assert.equal(h.prompts.length, 1);
-  assert.equal(h.prompts[0].sessionID, "new-live-session");
-  assert.match(h.prompts[0].text, /final complete text/);
+  assert.equal(h.prompts.length, 0, "dictation never sends a prompt");
+  assert.equal(inserted.length, 1, "final text inserted exactly once");
+  assert.match(inserted[0], /final complete text/);
+  assert.equal(submitted.length, 0, "plain dictation never submits");
   assert.equal(h.claims.length, 0);
   assert.equal(await stt.controller.startStreaming(), true);
   await flush();
   await tick();
   await stt.controller.cancelStreaming();
   assert.equal(h.claims.length, 0);
-  assert.equal(h.prompts.length, 1);
+  assert.equal(h.prompts.length, 0);
+  assert.equal(inserted.length, 1, "cancel inserts nothing");
   h.adapted.cleanup();
   await flush();
   assert.equal(scheduled.size, 0);
 });
 
 for (const dispose of [false, true]) {
-  for (const waitingOn of ["stop-tail", "home-create"]) {
-    test(`v2 streaming ${dispose ? "dispose" : "cancel"} while ${waitingOn} awaits never submits`, async () => {
-      const h = host();
-      let resolvePending;
-      let released = 0;
-      const capture = {
-        start() {},
-        snapshot: () => null,
-        stopFinal: async () => ({ wav: Buffer.from("final"), durationMs: 1000 }),
-        cancel: async () => {},
-        dispose: async () => {},
-      };
-      const transcriber = {
-        ensureReady: async () => ({ ready: true }),
-        transcribe: () =>
-          waitingOn === "stop-tail"
-            ? new Promise((resolve) => {
-                resolvePending = resolve;
-              })
-            : Promise.resolve({ text: "final race transcript" }),
-        dispose() {
-          released += 1;
+  test(`v2 streaming ${dispose ? "dispose" : "cancel"} while stop-tail awaits never inserts or submits`, async () => {
+    const h = host();
+    let resolvePending;
+    let released = 0;
+    let creates = 0;
+    const inserted = [];
+    h.ctx.renderer.currentFocusedRenderable = {
+      insertText: (text) => inserted.push(text),
+      submit: () => {},
+    };
+    h.ctx.client.session.create = () => {
+      creates += 1;
+      return new Promise((resolve) => {
+        resolvePending = resolve;
+      });
+    };
+    const capture = {
+      start() {},
+      snapshot: () => null,
+      stopFinal: async () => ({ wav: Buffer.from("final"), durationMs: 1000 }),
+      cancel: async () => {},
+      dispose: async () => {},
+    };
+    const transcriber = {
+      ensureReady: async () => ({ ready: true }),
+      transcribe: () =>
+        new Promise((resolve) => {
+          resolvePending = resolve;
+        }),
+      dispose() {
+        released += 1;
+      },
+      describe: () => ({ modelPath: "fake", language: "en" }),
+    };
+    const stt = registerSTT(
+      h.adapted.api,
+      h.adapted.api.kv,
+      async () => ({}),
+      {},
+      {},
+      { log() {} },
+      {
+        streamingControllerOpts: {
+          captureFactory: () => capture,
+          transcriberFactory: () => transcriber,
         },
-        describe: () => ({ modelPath: "fake", language: "en" }),
-      };
-      if (waitingOn === "home-create") {
-        h.ctx.client.session.create = () =>
-          new Promise((resolve) => {
-            resolvePending = resolve;
-          });
-      }
-      const stt = registerSTT(
-        h.adapted.api,
-        h.adapted.api.kv,
-        async () => ({}),
-        {},
-        {},
-        { log() {} },
-        {
-          streamingControllerOpts: {
-            captureFactory: () => capture,
-            transcriberFactory: () => transcriber,
-          },
-        },
-      );
-      assert.equal(await stt.controller.startStreaming(), true);
-      await flush();
-      const final = stt.controller.finalizeStreaming();
-      await flush();
-      assert.equal(typeof resolvePending, "function");
-      if (dispose) h.adapted.cleanup();
-      else await stt.controller.cancelStreaming();
-      resolvePending(
-        waitingOn === "stop-tail"
-          ? { text: "late final text" }
-          : { id: "cancelled-created-session" },
-      );
-      await final;
-      await flush();
-      assert.equal(h.prompts.length, 0);
-      assert.equal(h.claims.length, 0);
-      assert.equal(stt.controller.isProcessing(), false);
-      assert.ok(released > 0, "stale controller lease released");
-      h.adapted.cleanup();
-    });
-  }
+      },
+    );
+    assert.equal(await stt.controller.startStreaming(), true);
+    await flush();
+    const final = stt.controller.finalizeStreaming();
+    await flush();
+    assert.equal(typeof resolvePending, "function");
+    if (dispose) h.adapted.cleanup();
+    else await stt.controller.cancelStreaming();
+    resolvePending({ text: "late final text" });
+    await final;
+    await flush();
+    assert.equal(h.prompts.length, 0);
+    assert.equal(creates, 0, "streaming never creates a home session");
+    assert.equal(inserted.length, 0, "cancelled/disposed dictation inserts nothing");
+    assert.equal(h.claims.length, 0);
+    assert.equal(stt.controller.isProcessing(), false);
+    assert.ok(released > 0, "stale controller lease released");
+    h.adapted.cleanup();
+  });
 }

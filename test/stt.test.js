@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   __clearProcessingToastState,
+  __resetStreamWave,
   __setProcessingToastFn,
   NOTES_SYSTEM_PROMPT,
   STT_SYSTEM_PROMPT,
@@ -30,6 +31,7 @@ import {
   transcribeApiFile,
   transcribeFileLocal,
   updateProcessingToast,
+  waveLevelsFromPcm,
 } from "../lib/stt.js";
 
 test("interpretive prompt reinterprets mishearings, strict does not", () => {
@@ -297,4 +299,27 @@ test("builds whisper-cli args with language", () => {
     "-np",
     "-nt",
   ]);
+});
+
+test("stream waveform maps the PCM tail to flat silence and high speech bars", () => {
+  __resetStreamWave();
+  assert.deepEqual(waveLevelsFromPcm(null), Array(16).fill(0));
+  assert.deepEqual(waveLevelsFromPcm(Buffer.alloc(2560)), Array(16).fill(0));
+
+  __resetStreamWave();
+  const mixed = Buffer.alloc(2560);
+  for (let column = 0; column < 8; column++) {
+    for (let sample = 0; sample < 80; sample++) {
+      mixed.writeInt16LE(12000, (column * 80 + sample) * 2);
+    }
+  }
+  const levels = waveLevelsFromPcm(mixed);
+  assert.ok(
+    levels.slice(0, 8).every((level) => level === 7),
+    `loud columns are full bars: ${levels}`,
+  );
+  assert.ok(
+    levels.slice(8).every((level) => level === 0),
+    `silent columns stay flat: ${levels}`,
+  );
 });

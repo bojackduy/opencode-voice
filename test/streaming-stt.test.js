@@ -176,6 +176,18 @@ test("cold start captures before readiness so initial speech is kept", async () 
   await controller.dispose();
 });
 
+test("controller peekPcm exposes the newest capture tail for the live wave", async () => {
+  const cap = createFakeCapture();
+  const tail = Buffer.from([1, 0, 2, 0, 3, 0]);
+  cap.peekTail = (nBytes) => tail.subarray(0, Math.min(nBytes, tail.length));
+  const h = createHarness({ capture: cap, script: [{ text: "hello" }] });
+  await startAndSettle(h);
+  assert.deepEqual(h.controller.peekPcm(4), Buffer.from([1, 0, 2, 0]));
+  delete cap.peekTail;
+  assert.equal(h.controller.peekPcm(4), null);
+  await h.controller.dispose();
+});
+
 test("evolving partials stabilize the prefix and replace the tail", async () => {
   const h = createHarness({
     script: [{ text: "hello world" }, { text: "hello world this is" }],
