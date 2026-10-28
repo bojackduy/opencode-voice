@@ -997,6 +997,46 @@ test("status actions drive pause, seek, and rate cycling", async () => {
   await speaking;
 });
 
+test("status shows loading while synthesis is slow", async () => {
+  let release = () => {};
+  const calls = { begin: 0, update: 0, clear: 0 };
+  let reader = null;
+  const { audio, controller, settleTwice } = playerHost({
+    synthPcm: () =>
+      new Promise((resolve) => {
+        release = () => resolve(monoPcm16(4));
+      }),
+    statusHooks: {
+      status: {
+        begin: () => {
+          calls.begin += 1;
+        },
+        update: () => {
+          calls.update += 1;
+        },
+        clear: () => {
+          calls.clear += 1;
+        },
+      },
+      setReader: (fn) => {
+        reader = fn;
+      },
+    },
+  });
+
+  const speaking = controller.speak("Hello there.");
+  await settleTwice();
+  assert.equal(calls.begin, 1, "line mounts before slow synthesis finishes");
+  assert.equal(reader().status, "loading");
+  release();
+  await settleTwice();
+  assert.equal(reader().status, "playing");
+  assert.equal(reader().totalSec, 4);
+  audio.spawns[0].emitClose(0);
+  await speaking;
+  assert.equal(calls.clear, 1);
+});
+
 test("rate command persists the chosen speed", () => {
   const { command, host, replaced } = playerHost();
   command("tts.rate").onSelect();

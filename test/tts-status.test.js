@@ -85,6 +85,13 @@ test("status line shows buttons, clocks, bar, and always the speed", () => {
   assert.equal(formatTtsStatus(null), "");
 });
 
+test("loading state renders a single non-clickable line", () => {
+  const segs = statusSegments({ status: "loading" });
+  assert.equal(segs.length, 1);
+  assert.equal(segs[0].action, null);
+  assert.match(formatTtsStatus({ status: "loading" }), /Loading voice/);
+});
+
 test("slot renders the line, updates on tick, clears on stop", async () => {
   const holder = { state: { status: "playing", cursorSec: 1, totalSec: 10, rate: 1 } };
   const pressed = [];
