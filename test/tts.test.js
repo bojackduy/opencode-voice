@@ -623,6 +623,10 @@ function playerHost({
     replaced = node;
   };
   host.api.ui.dialog.clear = () => {};
+  host.ttsActions = null;
+  host.api.setTtsStatusActions = (actions) => {
+    host.ttsActions = actions;
+  };
   if (statusHooks) {
     host.api.ttsStatus = statusHooks.status;
     host.api.setTtsStatusReader = statusHooks.setReader;
@@ -965,6 +969,32 @@ test("media status begins on speak and clears on stop", async () => {
   audio.spawns[0].emitClose(0);
   await speaking;
   assert.equal(calls.clear, 1);
+});
+
+test("status actions drive pause, seek, and rate cycling", async () => {
+  const { audio, controller, host, settleTwice } = playerHost({
+    synthPcm: async () => monoPcm16(10),
+  });
+  const speaking = controller.speak("Hello there.");
+  await settleTwice();
+  const actions = host.ttsActions;
+  assert.ok(actions, "status actions registered");
+  actions.toggle();
+  assert.equal(controller.getState().status, "paused");
+  actions.toggle();
+  assert.equal(controller.getState().status, "playing");
+  actions.forward();
+  assert.equal(Math.round(controller.getState().cursorSec), 5);
+  actions.rewind();
+  assert.equal(Math.round(controller.getState().cursorSec), 0);
+  actions.rate();
+  assert.equal(host.kv.get("tts.rate"), 1.25);
+  actions.rate();
+  assert.equal(host.kv.get("tts.rate"), 1.5);
+  // Forward/rewind/rate all respawn the player; only closing the latest
+  // process settles the play promise (stale closes are fenced).
+  audio.spawns.at(-1).emitClose(0);
+  await speaking;
 });
 
 test("rate command persists the chosen speed", () => {

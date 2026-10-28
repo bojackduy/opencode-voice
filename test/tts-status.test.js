@@ -1,10 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createTtsStatus, formatTtsStatus, fmtClock, progressBar } from "../lib/tts-status.js";
+import {
+  createTtsStatus,
+  formatTtsStatus,
+  fmtClock,
+  nextRate,
+  progressBar,
+  statusSegments,
+} from "../lib/tts-status.js";
 
-function host(stateHolder) {
+function host(stateHolder, actions = {}) {
   const claims = [];
   const frames = [];
+  const nodes = [];
   const ctx = {
     ui: {
       toast: { show() {} },
@@ -15,7 +23,11 @@ function host(stateHolder) {
     },
   };
   const runtime = {
-    createElement: () => ({}),
+    createElement: () => {
+      const node = {};
+      nodes.push(node);
+      return node;
+    },
     insertNode() {},
     setProp(node, key, value) {
       node[key] = value;
@@ -25,9 +37,11 @@ function host(stateHolder) {
   const status = createTtsStatus(
     ctx,
     () => stateHolder.state,
+    actions,
     async () => runtime,
   );
-  return { ctx, claims, frames, status };
+  const byContent = (text) => nodes.find((n) => n.content === text);
+  return { ctx, claims, frames, nodes, byContent, status };
 }
 
 test("clock formats m:ss", () => {
@@ -43,26 +57,59 @@ test("progress bar fills proportionally", () => {
   assert.equal(progressBar(0, 0, 4), "░░░░");
 });
 
-test("status line shows state, clocks, bar, and non-1x rate", () => {
+test("rate cycles 0.75x to 2x then wraps", () => {
+  assert.equal(nextRate(1), 1.25);
+  assert.equal(nextRate(2), 0.75);
+  assert.equal(nextRate(0.5), 0.75);
+});
+
+test("status line shows buttons, clocks, bar, and always the speed", () => {
+  const segs = statusSegments({ status: "playing", cursorSec: 7, totalSec: 42, rate: 1 });
+  assert.deepEqual(
+    segs.map((s) => [s.key, s.action]),
+    [
+      ["toggle", "toggle"],
+      ["main", null],
+      ["rw", "rewind"],
+      ["ff", "forward"],
+      ["rate", "rate"],
+    ],
+  );
   const line = formatTtsStatus({ status: "playing", cursorSec: 7, totalSec: 42, rate: 1 });
-  assert.match(line, /^▶ 0:07 \/ 0:42 /);
-  assert.ok(!line.includes("1x"), "neutral rate stays hidden");
+  assert.ok(line.startsWith("[⏸] 0:07 / 0:42 "), line);
+  assert.ok(line.includes("[1x]"), "speed always visible for the cycle button");
+  assert.ok(line.includes("[-5s]") && line.includes("[+5s]"));
   const paused = formatTtsStatus({ status: "paused", cursorSec: 7, totalSec: 42, rate: 1.5 });
-  assert.match(paused, /^⏸ 0:07 \/ 0:42 /);
-  assert.ok(paused.endsWith("1.5x"));
+  assert.ok(paused.startsWith("[▶]"), paused);
+  assert.ok(paused.endsWith("[1.5x]"));
   assert.equal(formatTtsStatus(null), "");
 });
 
 test("slot renders the line, updates on tick, clears on stop", async () => {
   const holder = { state: { status: "playing", cursorSec: 1, totalSec: 10, rate: 1 } };
-  const h = host(holder);
+  const pressed = [];
+  const h = host(holder, {
+    toggle: () => pressed.push("toggle"),
+    rewind: () => pressed.push("rewind"),
+    forward: () => pressed.push("forward"),
+    rate: () => pressed.push("rate"),
+  });
   await h.status.begin();
   assert.equal(h.claims.length, 2);
   for (const c of h.claims) c.render();
-  assert.match(h.frames.at(-1), /^▶ 0:01 \/ 0:10 /);
-  holder.state = { status: "playing", cursorSec: 2, totalSec: 10, rate: 1 };
+  assert.equal(h.status.nodes(), 5, "one text node per segment");
+  assert.match(h.frames.at(-1), /\[1x\]$/);
+  assert.ok(h.frames.some((f) => f.startsWith("[⏸]")));
+  holder.state = { status: "paused", cursorSec: 2, totalSec: 10, rate: 1.5 };
   h.status.update();
-  assert.match(h.frames.at(-1), /^▶ 0:02 \/ 0:10 /);
+  assert.ok(
+    h.frames.some((f) => f === "[▶]"),
+    "toggle glyph follows state",
+  );
+  assert.ok(
+    h.frames.some((f) => f === "[1.5x]"),
+    "rate follows state",
+  );
   // No state change: no new frame (redraw is a no-op when unchanged).
   const before = h.frames.length;
   h.status.update();
@@ -73,6 +120,30 @@ test("slot renders the line, updates on tick, clears on stop", async () => {
   holder.state = { status: "playing", cursorSec: 9, totalSec: 10, rate: 1 };
   h.status.update();
   assert.equal(h.frames.length, frozen);
+  assert.deepEqual(pressed, [], "test drives presses explicitly below");
+});
+
+test("button nodes carry click handlers that dispatch actions", async () => {
+  const holder = { state: { status: "playing", cursorSec: 1, totalSec: 10, rate: 1 } };
+  const pressed = [];
+  const h = host(holder, {
+    toggle: () => pressed.push("toggle"),
+    rewind: () => pressed.push("rewind"),
+    forward: () => pressed.push("forward"),
+    rate: () => pressed.push("rate"),
+  });
+  await h.status.begin();
+  for (const c of h.claims) c.render();
+  // Each button segment is its own text node with exactly one action.
+  h.byContent("[-5s]").onMouseUp();
+  h.byContent("[+5s]").onMouseUp();
+  h.byContent("[1x]").onMouseUp();
+  h.byContent("[⏸]").onMouseUp();
+  assert.deepEqual(pressed, ["rewind", "forward", "rate", "toggle"]);
+  // The static clock/bar segment has no click handler.
+  const main = h.nodes.find((n) => typeof n.content === "string" && n.content.includes("/ 0:10"));
+  assert.equal(typeof main.onMouseUp, "undefined");
+  h.status.clear();
 });
 
 test("begin cancelled during runtime import never mounts stale UI", async () => {
@@ -81,6 +152,7 @@ test("begin cancelled during runtime import never mounts stale UI", async () => 
   const status = createTtsStatus(
     h.ctx,
     () => null,
+    {},
     () =>
       new Promise((resolve) => {
         loaded = resolve;
