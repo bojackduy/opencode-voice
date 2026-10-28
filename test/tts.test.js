@@ -5,6 +5,7 @@ import test from "node:test";
 
 import {
   detectLang,
+  groupSentencesByLang,
   isSpeakableSentence,
   localSpeechCleanup,
   registerTTS,
@@ -52,7 +53,7 @@ test("summarizes markdown tables instead of reading pipes", () => {
 test("summarizes mermaid diagrams as flows, not syntax", () => {
   assert.equal(
     summarizeMermaidForSpeech("graph TD\n  A[Start] --> B[Build]\n  B --> C[Test]"),
-    "Diagram, graph: Start, then Build, then Test.",
+    "Diagram, graph: Start, Build, Test.",
   );
   assert.equal(summarizeMermaidForSpeech("sequenceDiagram\n  A->>B: hi"), "Diagram.");
   assert.equal(summarizeMermaidForSpeech(""), "Diagram.");
@@ -65,7 +66,7 @@ test("cleanup routes tables and diagrams before the generic code rule", () => {
   );
   assert.equal(
     localSpeechCleanup("```mermaid\ngraph TD\n  A[Start] --> B[End]\n```\nDone."),
-    "Diagram, graph: Start, then End. Done.",
+    "Diagram, graph: Start, End. Done.",
   );
   // Non-mermaid fences keep the old behavior.
   assert.equal(localSpeechCleanup("```js\nconst x = 1;\n```\nDone."), "code snippet Done.");
@@ -238,6 +239,27 @@ test("nothing to read after the fallback stays quiet", async () => {
 //   launch, i.e. the shared playback path really received something. With PATH
 //   empty the spawn can never hang, so these tests never touch real audio.
 
+// A minimal but structurally valid WAV: the player measures the total from
+// real frames, so fixtures must parse like real synthesizer output.
+function makeTestWav(seconds = 2, sampleRate = 22050) {
+  const dataLen = Math.floor(seconds * sampleRate) * 2;
+  const wav = Buffer.alloc(44 + dataLen);
+  wav.write("RIFF", 0);
+  wav.writeUInt32LE(36 + dataLen, 4);
+  wav.write("WAVE", 8);
+  wav.write("fmt ", 12);
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(sampleRate, 24);
+  wav.writeUInt32LE(sampleRate * 2, 28);
+  wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write("data", 36);
+  wav.writeUInt32LE(dataLen, 40);
+  return wav;
+}
+
 function fakeChatterbox({ startOk = true, synthesize } = {}) {
   const calls = { start: 0, synthesize: [], stop: 0 };
   return {
@@ -256,7 +278,7 @@ function fakeChatterbox({ startOk = true, synthesize } = {}) {
         synthesize ??
         (async (text, lang) => {
           calls.synthesize.push({ text, lang });
-          return { ok: true, wav: Buffer.from("RIFF0000WAVEfmt-data") };
+          return { ok: true, wav: makeTestWav(2) };
         }),
       stop: () => {
         calls.stop += 1;
@@ -403,7 +425,7 @@ test("one toast per outage, not one per utterance, and recovery re-arms it", asy
     // exactly like the first three and never log the Chatterbox path.
     cb.client.synthesize = async (text, lang) => {
       cb.calls.synthesize.push({ text, lang });
-      return { ok: true, wav: Buffer.from("RIFF0000WAVEfmt-data") };
+      return { ok: true, wav: makeTestWav(2) };
     };
     await controller.speak("Recovered.");
     assert.equal(host.logs.filter((l) => /Speak via Chatterbox/.test(l.message)).length, 1);
@@ -434,7 +456,7 @@ test("a cancel during synthesis prevents playback entirely", async () => {
       synthesize: (text, lang) => {
         calls.synthesize.push({ text, lang });
         return new Promise((resolve) => {
-          release = () => resolve({ ok: true, wav: Buffer.from("RIFF0000WAVEfmt-data") });
+          release = () => resolve({ ok: true, wav: makeTestWav(2) });
         });
       },
       stop: () => {},
@@ -535,4 +557,423 @@ test("the default engine never constructs a Chatterbox client", async () => {
 
   assert.equal(constructed, 0, "Piper is the default: no sidecar, no model, no ports");
   assert.equal(piperMissed(host).length, 1);
+});
+
+// ---- Measured playback wiring: buffered synth -> exact total -> player ----
+// registerTTS drives lib/tts-player.js through injected seams (no audio):
+// synthPiperToPcm replaces the piper spawn, resolveVoice replaces the
+// voice-file probe, playerHooks replaces the sox spawn/clock.
+
+function mapKv(initial = {}) {
+  const store = new Map(Object.entries(initial));
+  return {
+    get: (key, fallback) => (store.has(key) ? store.get(key) : fallback),
+    set: (key, value) => {
+      store.set(key, value);
+    },
+  };
+}
+
+function fakePlayerAudio(initialNow = 0) {
+  let now = initialNow;
+  const spawns = [];
+  const signals = [];
+  let nextPid = 100;
+  return {
+    now: () => now,
+    advance: (ms) => {
+      now += ms;
+    },
+    spawns,
+    signals,
+    spawn(argv) {
+      const pid = nextPid++;
+      const rec = { pid, argv, closeCb: null, fed: null };
+      rec.onClose = (cb) => {
+        rec.closeCb = cb;
+      };
+      rec.emitClose = (code) => {
+        if (typeof rec.closeCb === "function") rec.closeCb(code);
+      };
+      spawns.push(rec);
+      return rec;
+    },
+    signal: (pid, sig) => {
+      signals.push({ pid, sig });
+    },
+  };
+}
+
+function monoPcm16(seconds, rate = 22050) {
+  return Buffer.alloc(Math.floor(seconds * rate) * 2);
+}
+
+function playerHost({
+  opts = {},
+  kvInitial = {},
+  chatterbox = null,
+  synthPcm = null,
+  statusHooks = null,
+} = {}) {
+  const host = fakeTtsHost();
+  host.kv = mapKv({ "tts.mode": "on", ...kvInitial });
+  host.api.ui.DialogSelect = (props) => props;
+  let replaced = null;
+  host.api.ui.dialog.replace = (node) => {
+    replaced = node;
+  };
+  host.api.ui.dialog.clear = () => {};
+  if (statusHooks) {
+    host.api.ttsStatus = statusHooks.status;
+    host.api.setTtsStatusReader = statusHooks.setReader;
+  }
+  const audio = fakePlayerAudio();
+  const deps = {
+    playerHooks: {
+      spawn: audio.spawn,
+      signal: audio.signal,
+      now: audio.now,
+      feed: (handle, { wav }) => {
+        handle.fed = wav;
+      },
+    },
+    resolveVoice: () => "/fake/voice.onnx",
+  };
+  if (chatterbox) deps.createChatterboxClient = () => chatterbox.client;
+  if (synthPcm) deps.synthPiperToPcm = synthPcm;
+  const { controller, commands } = registerTTS(
+    host.api,
+    host.kv,
+    async () => ({}),
+    undefined,
+    opts,
+    host.logger,
+    deps,
+  );
+  const command = (value) => commands.find((c) => c.value === value);
+  // Let promise microtasks flush (synth -> load -> play) WITHOUT awaiting
+  // the play promise itself: it only settles on close/stop.
+  const settleTwice = async () => {
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+  };
+  return { host, audio, controller, commands, command, settleTwice, replaced: () => replaced };
+}
+
+test("piper audio is buffered and played with an exact measured total", async () => {
+  const { audio, controller, settleTwice } = playerHost({ synthPcm: async () => monoPcm16(4) });
+
+  const speaking = controller.speak("Hello there.");
+  await settleTwice();
+  assert.equal(audio.spawns.length, 1);
+  assert.deepEqual(audio.spawns[0].argv, ["-q", "-"], "neutral playback carries no effects");
+  assert.equal(audio.spawns[0].fed.length, 44 + monoPcm16(4).length, "full WAV fed to play");
+  audio.spawns[0].emitClose(0);
+  await speaking;
+
+  const state = controller.getState();
+  assert.equal(state.totalSec, 4);
+  assert.equal(state.exactTotal, true);
+  assert.equal(state.cursorApproximate, true);
+  assert.equal(state.status, "idle");
+});
+
+test("pause freezes the cursor and resume continues it", async () => {
+  const { audio, controller, settleTwice } = playerHost({ synthPcm: async () => monoPcm16(10) });
+
+  const speaking = controller.speak("Hello there.");
+  await settleTwice();
+  audio.advance(2000);
+  assert.equal(controller.getState().cursorSec, 2);
+  assert.equal(controller.pause(), true);
+  assert.deepEqual(audio.signals.at(-1), { pid: 100, sig: "SIGSTOP" });
+  audio.advance(5000);
+  assert.equal(controller.getState().cursorSec, 2, "paused playback must not advance");
+  assert.equal(controller.getState().status, "paused");
+  assert.equal(controller.resume(), true);
+  assert.deepEqual(audio.signals.at(-1), { pid: 100, sig: "SIGCONT" });
+  audio.advance(1000);
+  assert.equal(controller.getState().cursorSec, 3);
+  audio.spawns[0].emitClose(0);
+  await speaking;
+});
+
+test("stop during piper synthesis never plays stale audio", async () => {
+  let release = () => {};
+  const { audio, controller } = playerHost({
+    synthPcm: () =>
+      new Promise((resolve) => {
+        release = () => resolve(monoPcm16(4));
+      }),
+  });
+
+  const speaking = controller.speak("Hello there.");
+  await new Promise((r) => setImmediate(r));
+  assert.equal(controller.isSpeaking(), true, "synthesis counts as speaking");
+  controller.stop();
+  assert.equal(controller.isSpeaking(), false);
+  release();
+  await speaking;
+
+  assert.equal(audio.spawns.length, 0, "no play process for a stopped synthesis");
+  assert.equal(controller.getState().status, "idle");
+});
+
+test("rate clamps, persists, and applies to playback", async () => {
+  const { audio, controller, settleTwice, host } = playerHost({
+    synthPcm: async () => monoPcm16(10),
+  });
+
+  assert.equal(controller.setRate(5), 2);
+  assert.equal(controller.setRate(0.1), 0.75);
+  assert.equal(host.kv.get("tts.rate"), 0.75, "clamped rate persists");
+  controller.setRate(1.5);
+  const speaking = controller.speak("Hello there.");
+  await settleTwice();
+  assert.ok(audio.spawns[0].argv.includes("tempo"), "rate effect present");
+  assert.ok(audio.spawns[0].argv.includes("1.5"));
+  audio.spawns[0].emitClose(0);
+  await speaking;
+});
+
+test("corrupt chatterbox audio falls back to piper instead of going silent", async () => {
+  const host = fakeTtsHost();
+  const cb = fakeChatterbox();
+  cb.client.synthesize = async () => ({ ok: true, wav: Buffer.from("junk") });
+  const { controller } = registerTTS(
+    host.api,
+    host.kv,
+    async () => ({}),
+    undefined,
+    { ttsEngine: "chatterbox" },
+    host.logger,
+    { createChatterboxClient: () => cb.client },
+  );
+
+  const realPath = process.env.PATH;
+  process.env.PATH = "";
+  try {
+    await controller.speak("Deploying now.");
+  } finally {
+    process.env.PATH = realPath;
+  }
+
+  assert.ok(
+    host.toasts.some((t) => /BAD_WAV/.test(t.message)),
+    "corrupt audio is reported",
+  );
+  assert.equal(piperMissed(host).length, 1, "speech still attempts Piper");
+});
+
+test("pause command toggles and reports state", async () => {
+  const { audio, controller, command, host, settleTwice } = playerHost({
+    synthPcm: async () => monoPcm16(10),
+  });
+  const pause = command("tts.pause");
+
+  pause.onSelect();
+  assert.ok(host.toasts.some((t) => /Nothing playing/.test(t.message)));
+
+  const speaking = controller.speak("Hello there.");
+  await settleTwice();
+  audio.advance(1000);
+  pause.onSelect();
+  assert.ok(host.toasts.some((t) => t.message === "Paused"));
+  assert.equal(controller.getState().status, "paused");
+  pause.onSelect();
+  assert.ok(host.toasts.some((t) => t.message === "Resumed"));
+  audio.spawns[0].emitClose(0);
+  await speaking;
+});
+
+test("rewind and forward move the cursor and clamp to the measured total", async () => {
+  const { audio, controller, command, host, settleTwice } = playerHost({
+    synthPcm: async () => monoPcm16(10),
+  });
+  const speaking = controller.speak("Hello there.");
+  await settleTwice();
+
+  controller.forward(99);
+  assert.equal(controller.getState().cursorSec, 10);
+  controller.rewind(99);
+  assert.equal(controller.getState().cursorSec, 0);
+  controller.forward(3.5);
+  assert.equal(controller.getState().cursorSec, 3.5);
+
+  command("tts.rewind").onSelect();
+  assert.ok(host.toasts.some((t) => /Rewound \(0:00 \/ 0:10\)/.test(t.message)));
+  command("tts.forward").onSelect();
+  assert.ok(host.toasts.some((t) => /Forwarded \(0:05 \/ 0:10\)/.test(t.message)));
+
+  controller.replay();
+  assert.equal(controller.getState().cursorSec, 0);
+  audio.spawns.at(-1).emitClose(0);
+  await speaking;
+});
+
+test("groupSentencesByLang splits vi/en spans preserving order", () => {
+  assert.deepEqual(groupSentencesByLang("Xin chào. Hello world. Cảm ơn bạn."), [
+    { lang: "vi", text: "Xin chào." },
+    { lang: "en", text: "Hello world." },
+    { lang: "vi", text: "Cảm ơn bạn." },
+  ]);
+  assert.deepEqual(groupSentencesByLang("Hello world. How are you."), [
+    { lang: "en", text: "Hello world. How are you." },
+  ]);
+  assert.deepEqual(groupSentencesByLang(""), []);
+  assert.deepEqual(groupSentencesByLang("  "), []);
+});
+
+test("mixed vi/en utterance routes each group to its engine in order", async () => {
+  const piperCalls = [];
+  const cb = fakeChatterbox();
+  const status = { begin: 0, update: 0, clear: 0 };
+  let reader = null;
+  const { audio, controller, settleTwice } = playerHost({
+    opts: { ttsEngine: "chatterbox" },
+    synthPcm: async (voice, line) => {
+      piperCalls.push({ voice, line });
+      return monoPcm16(2);
+    },
+    chatterbox: cb,
+    statusHooks: {
+      status: {
+        begin: () => {
+          status.begin += 1;
+        },
+        update: () => {
+          status.update += 1;
+        },
+        clear: () => {
+          status.clear += 1;
+        },
+      },
+      setReader: (fn) => {
+        reader = fn;
+      },
+    },
+  });
+
+  const speaking = controller.speak("Xin chào. Hello world.");
+  await settleTwice();
+  // vi group via Piper (Chatterbox has no vi), en group via Chatterbox.
+  assert.deepEqual(
+    piperCalls.map((c) => c.line),
+    ["Xin chào."],
+  );
+  assert.deepEqual(
+    cb.calls.synthesize.map((c) => ({ text: c.text, lang: c.lang })),
+    [{ text: "Hello world.", lang: "en" }],
+  );
+  // Both groups buffered before either plays: two sequential playbacks.
+  assert.equal(audio.spawns.length, 1, "first group plays first");
+  audio.spawns[0].emitClose(0);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(audio.spawns.length, 2, "second group plays after the first ends");
+  const snap = reader();
+  assert.equal(snap.totalSec, 4, "utterance total sums measured groups");
+  assert.equal(snap.status, "playing");
+  assert.equal(status.begin, 1, "status line mounts once per utterance");
+  await new Promise((r) => setImmediate(r));
+  audio.spawns[1].emitClose(0);
+  await speaking;
+  assert.equal(status.clear, 1, "status line clears when the chain ends");
+});
+
+test("stop during group synthesis drops the whole utterance", async () => {
+  let releaseSecond = () => {};
+  let synthCalls = 0;
+  const { audio, controller, settleTwice } = playerHost({
+    synthPcm: () =>
+      new Promise((resolve) => {
+        synthCalls += 1;
+        if (synthCalls === 1) resolve(monoPcm16(1));
+        else releaseSecond = () => resolve(monoPcm16(1));
+      }),
+  });
+
+  const speaking = controller.speak("Xin chào. Hello there. Tạm biệt.");
+  await settleTwice();
+  // Group 2 synthesis is still pending: stop, then let it resolve late.
+  controller.stop();
+  releaseSecond();
+  await speaking;
+  assert.equal(synthCalls, 2, "third group never starts after a stop");
+  assert.equal(audio.spawns.length, 0, "no audio plays for a stopped chain");
+});
+
+test("chatterbox failure falls back to piper for that group only", async () => {
+  const piperCalls = [];
+  const cb = fakeChatterbox();
+  cb.client.synthesize = async (text, lang) => {
+    cb.calls.synthesize.push({ text, lang });
+    return { ok: false, code: "SYNTH_DOWN", message: "boom" };
+  };
+  const { audio, controller, settleTwice, host } = playerHost({
+    opts: { ttsEngine: "chatterbox" },
+    synthPcm: async (voice, line) => {
+      piperCalls.push({ voice, line });
+      return monoPcm16(1);
+    },
+    chatterbox: cb,
+  });
+
+  const speaking = controller.speak("Hello world.");
+  await settleTwice();
+  assert.deepEqual(
+    piperCalls.map((c) => c.line),
+    ["Hello world."],
+  );
+  assert.ok(
+    host.toasts.some((t) => /SYNTH_DOWN/.test(t.message)),
+    "group failure is reported",
+  );
+  assert.equal(audio.spawns.length, 1);
+  audio.spawns[0].emitClose(0);
+  await speaking;
+});
+
+test("media status begins on speak and clears on stop", async () => {
+  const calls = { begin: 0, update: 0, clear: 0 };
+  let reader = null;
+  const { audio, controller, settleTwice } = playerHost({
+    synthPcm: async () => monoPcm16(4),
+    statusHooks: {
+      status: {
+        begin: () => {
+          calls.begin += 1;
+        },
+        update: () => {
+          calls.update += 1;
+        },
+        clear: () => {
+          calls.clear += 1;
+        },
+      },
+      setReader: (fn) => {
+        reader = fn;
+      },
+    },
+  });
+
+  const speaking = controller.speak("Hello there.");
+  await settleTwice();
+  assert.equal(calls.begin, 1);
+  const snap = reader();
+  assert.equal(snap.totalSec, 4, "exact measured total, not an estimate");
+  assert.equal(snap.status, "playing");
+  audio.spawns[0].emitClose(0);
+  await speaking;
+  assert.equal(calls.clear, 1);
+});
+
+test("rate command persists the chosen speed", () => {
+  const { command, host, replaced } = playerHost();
+  command("tts.rate").onSelect();
+  // dialog.replace receives a render node (host contract); render it.
+  const dialog = replaced()();
+  assert.ok(dialog, "rate opens a dialog");
+  dialog.options.find((o) => o.value === "1.5").onSelect();
+  assert.equal(host.kv.get("tts.rate"), 1.5);
+  assert.ok(host.toasts.some((t) => t.message === "Playback speed: 1.5x"));
 });
