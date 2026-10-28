@@ -130,6 +130,38 @@ test("slot renders the line, updates on tick, clears on stop", async () => {
   assert.deepEqual(pressed, [], "test drives presses explicitly below");
 });
 
+test("buttons appear when loading finishes without a re-render", async () => {
+  // Regression: the line used to mount a single node during loading and
+  // never create the button nodes afterwards, leaving a bare clock+bar.
+  const holder = { state: { status: "loading" } };
+  const pressed = [];
+  const h = host(holder, {
+    toggle: () => pressed.push("toggle"),
+    rewind: () => pressed.push("rewind"),
+    forward: () => pressed.push("forward"),
+    rate: () => pressed.push("rate"),
+  });
+  await h.status.begin();
+  for (const c of h.claims) c.render();
+  assert.ok(
+    h.frames.some((f) => /Loading voice/.test(f)),
+    "loading line mounts",
+  );
+  // Playback starts: the host does NOT call render again; update() must
+  // fill the already-mounted button nodes in place.
+  holder.state = { status: "playing", cursorSec: 1, totalSec: 10, rate: 1 };
+  h.status.update();
+  assert.ok(
+    h.frames.some((f) => f === "[-5s]"),
+    "rewind button fills in after loading",
+  );
+  assert.ok(h.frames.some((f) => f === "[⏸]"), "toggle fills in after loading");
+  assert.ok(h.frames.some((f) => f === "[1x]"), "rate fills in after loading");
+  h.byContent("[-5s]").onMouseUp();
+  assert.deepEqual(pressed, ["rewind"], "late-filled button is clickable");
+  h.status.clear();
+});
+
 test("button nodes carry click handlers that dispatch actions", async () => {
   const holder = { state: { status: "playing", cursorSec: 1, totalSec: 10, rate: 1 } };
   const pressed = [];
