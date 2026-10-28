@@ -6,10 +6,19 @@ import test from "node:test";
 import {
   STREAMING_MODE_DEFAULTS,
   isStreamingActive,
+  resolveSttAutoSubmit,
   resolveSttMode,
   resolveStreamTimings,
 } from "../lib/stt.js";
 import { acquireSharedWhisperServer } from "../lib/whisper-server.js";
+
+function memKv(initial = {}) {
+  const store = new Map(Object.entries(initial));
+  return {
+    get: (key, fallback) => (store.has(key) ? store.get(key) : fallback),
+    set: (key, value) => store.set(key, value),
+  };
+}
 
 test("streaming mode defaults to batch, preserving current behavior", () => {
   assert.equal(resolveSttMode(undefined), "batch");
@@ -17,6 +26,22 @@ test("streaming mode defaults to batch, preserving current behavior", () => {
   assert.equal(resolveSttMode({ sttMode: "batch" }), "batch");
   assert.equal(resolveSttMode({ sttMode: "streaming" }), "streaming");
   assert.equal(resolveSttMode({ sttMode: "anything-else" }), "batch");
+});
+
+test("persisted kv mode wins over plugin options", () => {
+  assert.equal(resolveSttMode({ sttMode: "streaming" }, memKv({ "stt.mode": "batch" })), "batch");
+  assert.equal(resolveSttMode({}, memKv({ "stt.mode": "streaming" })), "streaming");
+  assert.equal(resolveSttMode(undefined, memKv({ "stt.mode": "streaming" })), "streaming");
+  assert.equal(resolveSttMode({}, memKv({ "stt.mode": "garbage" })), "batch");
+  assert.equal(resolveSttMode({ sttMode: "streaming" }, memKv()), "streaming");
+});
+
+test("auto-submit resolves from kv first, options second, off by default", () => {
+  assert.equal(resolveSttAutoSubmit(undefined), false);
+  assert.equal(resolveSttAutoSubmit({}), false);
+  assert.equal(resolveSttAutoSubmit({ sttAutoSubmit: true }), true);
+  assert.equal(resolveSttAutoSubmit({ sttAutoSubmit: true }, memKv({ "stt.autoSubmit": false })), false);
+  assert.equal(resolveSttAutoSubmit({}, memKv({ "stt.autoSubmit": true })), true);
 });
 
 test("stream timing tunables have sane defaults and ignore garbage", () => {
