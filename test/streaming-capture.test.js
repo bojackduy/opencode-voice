@@ -383,3 +383,67 @@ test("controller fallback audio via the real adapter describes retained coverage
   await controller.dispose();
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test("pause SIGSTOPs the mic and stopFinal resumes before stopping it", async () => {
+  const dir = makeSpoolDir();
+  const proc = new EventEmitter();
+  proc.stdout = new EventEmitter();
+  proc.stderr = new EventEmitter();
+  proc.killedWith = [];
+  proc.kill = (sig) => {
+    proc.killedWith.push(sig);
+    if (sig === "SIGSTOP" || sig === "SIGCONT") return true; // frozen, stays alive
+    proc.emit("exit", 0);
+    proc.emit("close", 0);
+    return true;
+  };
+  const cap = createSoxRollingCapture({
+    windowMs: 10000,
+    spawnFn: () => proc,
+    spoolDir: dir,
+  });
+  assert.equal(cap.pause(), false, "no proc, nothing to pause");
+  cap.start();
+  pushSeconds(proc, 0, 2);
+  await cap.flushSpool();
+  assert.equal(cap.pause(), true);
+  assert.deepEqual(proc.killedWith, ["SIGSTOP"]);
+  assert.equal(cap.isAlive(), true, "paused mic is frozen, not dead");
+  const fin = await cap.stopFinal({ soxExitTimeoutMs: 50 });
+  const contIdx = proc.killedWith.indexOf("SIGCONT");
+  const intIdx = proc.killedWith.indexOf("SIGINT");
+  assert.ok(contIdx !== -1 && contIdx < intIdx, "SIGCONT precedes SIGINT on teardown");
+  assert.ok(fin.wav && fin.wav.length > 44, "retained audio still returned");
+  await cap.dispose();
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("cancel resumes a paused mic before killing it", async () => {
+  const dir = makeSpoolDir();
+  const proc = new EventEmitter();
+  proc.stdout = new EventEmitter();
+  proc.stderr = new EventEmitter();
+  proc.killedWith = [];
+  proc.kill = (sig) => {
+    proc.killedWith.push(sig);
+    if (sig === "SIGSTOP" || sig === "SIGCONT") return true;
+    proc.emit("exit", 0);
+    proc.emit("close", 0);
+    return true;
+  };
+  const cap = createSoxRollingCapture({
+    windowMs: 10000,
+    spawnFn: () => proc,
+    spoolDir: dir,
+  });
+  cap.start();
+  pushSeconds(proc, 0, 1);
+  await cap.flushSpool();
+  assert.equal(cap.pause(), true);
+  await cap.cancel();
+  const contIdx = proc.killedWith.indexOf("SIGCONT");
+  const killIdx = proc.killedWith.indexOf("SIGKILL");
+  assert.ok(contIdx !== -1 && killIdx !== -1 && contIdx < killIdx, "SIGCONT precedes SIGKILL");
+  await cap.dispose();
+  fs.rmSync(dir, { recursive: true, force: true });
+});

@@ -558,6 +558,7 @@ If a path is not set, the built-in default prompt is used.
 | `/stt-record`   | `ctrl+r`   | Start/stop recording + transcribe      |
 | `/stt-submit`   | `leader+r` | Stop recording, transcribe, and submit |
 | `/stt-stop`     |            | Cancel recording                       |
+| `/stt-pause`    |            | Pause/resume live dictation (streaming only; mic frozen, nothing recorded) |
 | `/stt-model`    |            | Select whisper model                   |
 | `/stt-language` |            | Select transcription language          |
 | `/stt-mic`      |            | Select microphone                      |
@@ -574,6 +575,9 @@ In `streaming` mode (`sttMode: "streaming"`), `/stt-record` toggles
 start/finalize of a live dictation session instead of one-shot recording
 (see "Streaming dictation" below); `/stt-submit` finalizes and submits via
 the dictated field only; `/stt-stop` cancels and removes only dictated text.
+`/stt-pause` (or the ⏸ button in the live preview) freezes the mic
+mid-dictation so noise never enters the transcript; pressing record while
+paused resumes instead of finalizing.
 
 ### Text-to-speech
 

@@ -14,6 +14,7 @@ function host() {
   const frames = [];
   const prompts = [];
   const disposes = [];
+  const created = [];
   let route = { type: "home" };
   const ctx = {
     client: {
@@ -52,7 +53,11 @@ function host() {
         },
       ];
     },
-    createElement: () => ({}),
+    createElement: () => {
+      const node = {};
+      created.push(node);
+      return node;
+    },
     insertNode() {},
     insert(node, value) {
       node.content = value;
@@ -71,7 +76,7 @@ function host() {
   const adapted = adaptV2Context(ctx);
   adapted.api.voicePreview = createV2Preview(ctx, async () => runtime);
   adapted.api.lifecycle.onDispose(() => adapted.api.voicePreview.clear());
-  return { ctx, claims, frames, prompts, disposes, adapted };
+  return { ctx, claims, created, frames, prompts, disposes, adapted };
 }
 
 test("v2 slot preview distinguishes stable/tentative, bounds display, clears claims", async () => {
@@ -288,3 +293,108 @@ for (const dispose of [false, true]) {
     h.adapted.cleanup();
   });
 }
+
+test("v2 preview toggle button dispatches the wired action and reflects pause", async () => {
+  const h = host();
+  const preview = h.adapted.api.voicePreview;
+  let toggles = 0;
+  preview.setToggleAction(() => {
+    toggles += 1;
+  });
+  await preview.begin();
+  for (const c of h.claims) c.render();
+  preview.applyPartial({ stableText: "hello" });
+  preview.setPaused(false);
+  const toggleNode = h.created.find((n) => n.content === "[⏸]");
+  assert.ok(toggleNode, "toggle node renders pause glyph while live");
+  assert.equal(typeof toggleNode.onMouseUp, "function", "toggle is clickable");
+  toggleNode.onMouseUp();
+  assert.equal(toggles, 1, "click dispatches the wired toggle action");
+  preview.setPaused(true);
+  assert.ok(
+    h.created.some((n) => n.content === "[▶]"),
+    "toggle flips to resume glyph when paused",
+  );
+  assert.ok(
+    h.frames.some((f) => /hello/.test(f)),
+    "transcript body survives the pause flip",
+  );
+  preview.setPaused(false);
+  assert.ok(
+    h.created.some((n) => n.content === "[⏸]"),
+    "toggle flips back on resume",
+  );
+  h.adapted.cleanup();
+});
+
+test("v2 record key resumes a paused session instead of finalizing", async () => {
+  const h = host();
+  h.ctx.renderer.currentFocusedRenderable = {
+    insertText: () => {},
+    submit: () => {},
+  };
+  const inserted = [];
+  h.ctx.renderer.currentFocusedRenderable.insertText = (text) => inserted.push(text);
+  const scheduled = new Map();
+  let id = 0;
+  const clock = {
+    setTimeout(fn) {
+      scheduled.set(++id, fn);
+      return id;
+    },
+    clearTimeout(key) {
+      scheduled.delete(key);
+    },
+  };
+  const capture = {
+    start() {},
+    snapshot: () => ({ wav: Buffer.from("snapshot"), durationMs: 1000 }),
+    stopFinal: async () => ({ wav: Buffer.from("final"), durationMs: 1000 }),
+    cancel: async () => {},
+    dispose: async () => {},
+  };
+  const transcriber = {
+    ensureReady: async () => ({ ready: true }),
+    transcribe: async () => ({ text: "spoken words here" }),
+    dispose() {},
+    describe: () => ({ modelPath: "fake", language: "en" }),
+  };
+  const stt = registerSTT(
+    h.adapted.api,
+    h.adapted.api.kv,
+    async () => {
+      throw new Error("No LLM in streaming");
+    },
+    {},
+    { sttMode: "streaming" },
+    { log() {} },
+    {
+      streamingControllerOpts: {
+        captureFactory: () => capture,
+        transcriberFactory: () => transcriber,
+        clock,
+      },
+    },
+  );
+  const record = stt.commands.find((c) => c.value === "stt.record");
+  const pauseCmd = stt.commands.find((c) => c.value === "stt.pause");
+  assert.ok(record && pauseCmd, "record and pause commands registered");
+  await stt.controller.startStreaming();
+  await flush();
+  for (const c of h.claims) c.render();
+  pauseCmd.onSelect();
+  await flush();
+  assert.ok(
+    h.created.some((n) => n.content === "[▶]"),
+    "pause flips the preview toggle to resume",
+  );
+  // Record key while paused resumes instead of finalizing (no insert yet).
+  record.onSelect();
+  await flush();
+  assert.deepEqual(inserted, [], "resume does not finalize or insert");
+  await stt.controller.finalizeStreaming();
+  await flush();
+  assert.ok(inserted.length > 0, "explicit finalize still inserts after resume");
+  h.adapted.cleanup();
+  await flush();
+});

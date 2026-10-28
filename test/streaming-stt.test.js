@@ -892,3 +892,66 @@ test("rolling PCM ring is bounded and snapshots the newest bytes", async () => {
   assert.ok(ring.size() <= 100);
   assert.ok(ring.snapshotLast(100).every((b) => b === 3));
 });
+
+test("pause is refused when idle and resume is refused when not paused", async () => {
+  const h = createHarness({});
+  assert.equal(h.controller.pause(), false);
+  assert.equal(h.controller.resume(), false);
+  assert.equal(h.controller.getState().paused, false);
+  await h.controller.dispose();
+});
+
+test("pause freezes inference ticks and resume continues them", async () => {
+  const h = createHarness({ script: [{ text: "hello" }, { text: "hello world" }] });
+  await startAndSettle(h);
+  h.clock.fireNext();
+  await flushAsync();
+  assert.equal(h.tx.calls.length, 1, "one inference per tick while live");
+  assert.equal(h.controller.pause(), true);
+  assert.equal(h.controller.getState().paused, true);
+  assert.equal(h.controller.pause(), false, "double pause is a no-op");
+  h.clock.fireNext();
+  await flushAsync();
+  h.clock.fireNext();
+  await flushAsync();
+  assert.equal(h.tx.calls.length, 1, "no inference while paused");
+  assert.ok(h.clock.pendingCount() > 0, "cadence timer stays armed for instant resume");
+  assert.equal(h.controller.resume(), true);
+  assert.equal(h.controller.getState().paused, false);
+  assert.equal(h.controller.resume(), false, "resume when live is a no-op");
+  h.clock.fireNext();
+  await flushAsync();
+  assert.equal(h.tx.calls.length, 2, "inference resumes after unpause");
+  await h.controller.dispose();
+});
+
+test("stop from paused keeps the transcript and clears the pause flag", async () => {
+  const h = createHarness({ script: [{ text: "hello world" }] });
+  await startAndSettle(h);
+  h.clock.fireNext();
+  await flushAsync();
+  assert.equal(h.controller.pause(), true);
+  const done = await h.controller.stop();
+  assert.ok(done.text.includes("hello"), "stop-tail transcription still works");
+  assert.equal(h.controller.getState().paused, false);
+  assert.equal(h.controller.getState().status, "idle");
+});
+
+test("cancel from paused succeeds without hanging", async () => {
+  const h = createHarness({ script: [{ text: "hello world" }] });
+  await startAndSettle(h);
+  assert.equal(h.controller.pause(), true);
+  assert.equal(await h.controller.cancel(), true);
+  assert.equal(h.controller.getState().paused, false);
+});
+
+test("a fresh start never resumes paused", async () => {
+  const h = createHarness({ script: [{ text: "hello" }] });
+  await startAndSettle(h);
+  assert.equal(h.controller.pause(), true);
+  await h.controller.cancel();
+  assert.equal(h.controller.getState().paused, false);
+  await startAndSettle(h);
+  assert.equal(h.controller.getState().paused, false, "reuse starts unpaused");
+  await h.controller.dispose();
+});

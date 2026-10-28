@@ -21,6 +21,7 @@
 //   /stt-record          - start/stop recording + transcribe  (default: <leader>[ = ctrl+x, [)
 //   /stt-submit          - stop recording + transcribe + submit (palette-only)
 //   /stt-stop            - cancel recording (palette-only)
+//   /stt-pause           - pause/resume live dictation, mic frozen (palette-only)
 //   /stt-model           - select whisper model
 //   /stt-language        - select transcription language
 //   /stt-mic             - select microphone
