@@ -26,7 +26,7 @@
 //   /stt-mic             - select microphone
 //   /tts-speak           - read last response aloud        (default: <leader>] = ctrl+x, ])
 //   /tts-mode            - toggle auto TTS on/off (palette-only)
-//   /tts-stop            - stop playback                   (default: <leader>; , also palette)
+//   /tts-stop            - stop playback (palette-only; global <leader>. already stops TTS)
 //   /tts-voice           - select TTS voice
 //   /voice-conversation  - toggle hands-free voice conversation (default: <leader>v = ctrl+x, v)
 //   /voice-conversation-stop - exit voice conversation mode (palette-only)
