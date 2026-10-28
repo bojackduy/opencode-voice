@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import test from "node:test";
 
 import {
@@ -8,6 +10,8 @@ import {
   registerTTS,
   resolveSpeechText,
   splitSpokenSentences,
+  summarizeMarkdownTable,
+  summarizeMermaidForSpeech,
 } from "../lib/tts.js";
 
 test("cleans markdown for speech", () => {
@@ -24,7 +28,51 @@ test("cleans markdown for speech", () => {
   );
 });
 
-test("splits streamed text into complete sentences", () => {
+test("summarizes markdown tables instead of reading pipes", () => {
+  assert.equal(
+    summarizeMarkdownTable("| Name | Status |\n|------|--------|\n| build | pass |\n| test | fail |"),
+    "Table with columns Name, Status. 2 rows: build, pass; test, fail.",
+  );
+  // More than the cap: shape + head + overflow count, never the whole dump.
+  const big = ["| K | V |", "|---|---|", ...Array.from({ length: 6 }, (_, i) => `| k${i} | v${i} |`)].join(
+    "\n",
+  );
+  assert.equal(
+    summarizeMarkdownTable(big),
+    "Table with columns K, V. 6 rows: k0, v0; k1, v1; k2, v2. And 3 more.",
+  );
+  // No separator row: still speakable, never raw pipes.
+  assert.equal(summarizeMarkdownTable("| A |\n| B |"), "Table with columns A. 1 row: B.");
+});
+
+test("summarizes mermaid diagrams as flows, not syntax", () => {
+  assert.equal(
+    summarizeMermaidForSpeech("graph TD\n  A[Start] --> B[Build]\n  B --> C[Test]"),
+    "Diagram, graph: Start, then Build, then Test.",
+  );
+  assert.equal(summarizeMermaidForSpeech("sequenceDiagram\n  A->>B: hi"), "Diagram.");
+  assert.equal(summarizeMermaidForSpeech(""), "Diagram.");
+});
+
+test("cleanup routes tables and diagrams before the generic code rule", () => {
+  assert.equal(
+    localSpeechCleanup("Results:\n| Name | Status |\n|---|---|\n| build | pass |\nDone."),
+    "Results: Table with columns Name, Status. 1 row: build, pass. Done.",
+  );
+  assert.equal(
+    localSpeechCleanup("```mermaid\ngraph TD\n  A[Start] --> B[End]\n```\nDone."),
+    "Diagram, graph: Start, then End. Done.",
+  );
+  // Non-mermaid fences keep the old behavior.
+  assert.equal(localSpeechCleanup("```js\nconst x = 1;\n```\nDone."), "code snippet Done.");
+});
+
+test("narrator prompts cover tables, diagrams, and code-switching", () => {
+  const src = fs.readFileSync(path.join(import.meta.dirname, "..", "lib", "tts.js"), "utf-8");
+  assert.match(src, /TABLES: never read a markdown table cell by cell/);
+  assert.match(src, /DIAGRAMS: mermaid and other fenced diagrams are never read as syntax/);
+  assert.match(src, /Keep technical terms.*in English/);
+});
   assert.deepEqual(splitSpokenSentences("Hello world. How are"), {
     sentences: ["Hello world."],
     rest: "How are",
