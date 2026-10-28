@@ -140,7 +140,7 @@ test("fresh-process import of the plugin is milliseconds", async () => {
       (err, stdout, stderr) => (err ? reject(new Error(stderr || err.message)) : resolve(stdout)),
     );
   });
-  const importMs = Number(out.trim());
+  const importMs = Number((out.match(/\d+/) || [])[0]);
   assert.ok(Number.isFinite(importMs), `unparseable import timing: ${out}`);
   assert.ok(importMs < 5000, `plugin import took ${importMs}ms`);
 });
