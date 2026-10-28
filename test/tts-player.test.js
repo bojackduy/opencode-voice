@@ -91,6 +91,13 @@ test("play applies tempo and trim from rate and seek offset", () => {
   const argv = audio.spawns[0].argv;
   assert.ok(argv.includes("tempo") && argv.includes("1.5"), `tempo missing: ${argv.join(" ")}`);
   assert.ok(argv.includes("trim"), `trim missing: ${argv.join(" ")}`);
+  // Regression: effects before the input make sox report "Not enough input
+  // filenames" and exit instantly with no audio. Input ("-") must lead.
+  assert.deepEqual(argv.slice(0, 2), ["-q", "-"], `input must lead: ${argv.join(" ")}`);
+  assert.ok(
+    argv.indexOf("trim") > 1 && argv.indexOf("tempo") > 1,
+    `effects must follow the input: ${argv.join(" ")}`,
+  );
 });
 
 test("pause freezes the cursor and resume continues it", () => {
