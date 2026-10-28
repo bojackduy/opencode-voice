@@ -30,13 +30,17 @@ test("cleans markdown for speech", () => {
 
 test("summarizes markdown tables instead of reading pipes", () => {
   assert.equal(
-    summarizeMarkdownTable("| Name | Status |\n|------|--------|\n| build | pass |\n| test | fail |"),
+    summarizeMarkdownTable(
+      "| Name | Status |\n|------|--------|\n| build | pass |\n| test | fail |",
+    ),
     "Table with columns Name, Status. 2 rows: build, pass; test, fail.",
   );
   // More than the cap: shape + head + overflow count, never the whole dump.
-  const big = ["| K | V |", "|---|---|", ...Array.from({ length: 6 }, (_, i) => `| k${i} | v${i} |`)].join(
-    "\n",
-  );
+  const big = [
+    "| K | V |",
+    "|---|---|",
+    ...Array.from({ length: 6 }, (_, i) => `| k${i} | v${i} |`),
+  ].join("\n");
   assert.equal(
     summarizeMarkdownTable(big),
     "Table with columns K, V. 6 rows: k0, v0; k1, v1; k2, v2. And 3 more.",
@@ -73,6 +77,8 @@ test("narrator prompts cover tables, diagrams, and code-switching", () => {
   assert.match(src, /DIAGRAMS: mermaid and other fenced diagrams are never read as syntax/);
   assert.match(src, /Keep technical terms.*in English/);
 });
+
+test("splits streamed text into complete sentences", () => {
   assert.deepEqual(splitSpokenSentences("Hello world. How are"), {
     sentences: ["Hello world."],
     rest: "How are",

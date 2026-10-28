@@ -40,7 +40,10 @@ test("auto-submit resolves from kv first, options second, off by default", () =>
   assert.equal(resolveSttAutoSubmit(undefined), false);
   assert.equal(resolveSttAutoSubmit({}), false);
   assert.equal(resolveSttAutoSubmit({ sttAutoSubmit: true }), true);
-  assert.equal(resolveSttAutoSubmit({ sttAutoSubmit: true }, memKv({ "stt.autoSubmit": false })), false);
+  assert.equal(
+    resolveSttAutoSubmit({ sttAutoSubmit: true }, memKv({ "stt.autoSubmit": false })),
+    false,
+  );
   assert.equal(resolveSttAutoSubmit({}, memKv({ "stt.autoSubmit": true })), true);
 });
 
