@@ -155,8 +155,14 @@ test("buttons appear when loading finishes without a re-render", async () => {
     h.frames.some((f) => f === "[-5s]"),
     "rewind button fills in after loading",
   );
-  assert.ok(h.frames.some((f) => f === "[⏸]"), "toggle fills in after loading");
-  assert.ok(h.frames.some((f) => f === "[1x]"), "rate fills in after loading");
+  assert.ok(
+    h.frames.some((f) => f === "[⏸]"),
+    "toggle fills in after loading",
+  );
+  assert.ok(
+    h.frames.some((f) => f === "[1x]"),
+    "rate fills in after loading",
+  );
   h.byContent("[-5s]").onMouseUp();
   assert.deepEqual(pressed, ["rewind"], "late-filled button is clickable");
   h.status.clear();
