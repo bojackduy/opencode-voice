@@ -12,6 +12,8 @@ spoken aloud via Piper TTS. Both directions use an LLM to normalize text for
 natural speech (fixing homophones, splitting camelCase identifiers, summarizing
 code-heavy responses, etc.).
 
+![Demo: browsing voice commands in OpenCode](assets/demo.gif)
+
 ## OpenCode v1 and v2
 
 One package runs on both OpenCode 1.x and 2.x. The plugin detects the host
@@ -883,6 +885,27 @@ When enabled (`/tts-mode`), the plugin automatically speaks:
 - Assistant responses when a session goes idle after work
 - Permission requests
 - Questions that need your answer
+
+## Demo
+
+The GIF above was recorded with `asciinema` + `agg` driving the OpenCode TUI
+via `tmux`. To regenerate it after changing commands or UI:
+
+```bash
+scripts/record-demo.sh assets/demo.cast /path/to/project
+agg assets/demo.cast assets/demo.gif
+```
+
+Requires `tmux`, `asciinema`, and `agg` on PATH.
+
+For a **full voice demo** (waveform + conversation UI, needs a working mic and
+whisper model), run the provided expect script locally:
+
+```bash
+scripts/record-voice.sh assets/voice.cast /path/to/project
+# or drive manually:
+expect scripts/demo-voice.exp   # inside an asciinema session
+```
 
 ## Contributing
 
