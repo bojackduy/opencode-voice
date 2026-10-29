@@ -588,8 +588,14 @@ then `s`.
 | ------------ | ---------- | ------------------------ |
 | `/tts-speak` | `leader+s` | Read last response aloud |
 | `/tts-mode`  |            | Toggle auto TTS on/off   |
-| `/tts-stop`  | `escape`   | Stop playback            |
+| `/tts-stop`  |            | Stop playback (palette; global `leader+.` also stops) |
 | `/tts-voice` |            | Select TTS voice         |
+| `/tts-engine`|            | Select TTS engine (piper / chatterbox / vieneu) |
+| `/tts-pause` |            | Pause/resume TTS playback (mid-speech, no restart) |
+| `/tts-replay`| `leader+0` | Replay from start        |
+| `/tts-rewind`| `leader+-` | Rewind 5 seconds         |
+| `/tts-forward`| `leader+=`| Forward 5 seconds        |
+| `/tts-rate`  |            | Cycle/select playback speed 0.75x-2x (persisted) |
 
 ### Voice conversation
 

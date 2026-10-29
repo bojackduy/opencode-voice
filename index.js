@@ -27,8 +27,14 @@
 //   /stt-mic             - select microphone
 //   /tts-speak           - read last response aloud        (default: <leader>] = ctrl+x, ])
 //   /tts-mode            - toggle auto TTS on/off (palette-only)
-//   /tts-stop            - stop playback (palette-only; global <leader>. already stops TTS)
+//   /tts-stop            - stop playback (palette-only; global <leader>. also stops TTS)
 //   /tts-voice           - select TTS voice
+//   /tts-engine          - select TTS engine (piper/chatterbox/vieneu) (palette-only)
+//   /tts-pause           - pause/resume TTS playback (palette-only)
+//   /tts-replay          - replay from start (default: <leader>0)
+//   /tts-rewind          - rewind 5s (default: <leader>-)
+//   /tts-forward         - forward 5s (default: <leader>=)
+//   /tts-rate            - cycle/select playback speed 0.75x-2x (palette-only)
 //   /voice-conversation  - toggle hands-free voice conversation (default: <leader>v = ctrl+x, v)
 //   /voice-conversation-stop - exit voice conversation mode (palette-only)
 //   /voice-notes-start   - start continuous live-notes recording (palette-only)
