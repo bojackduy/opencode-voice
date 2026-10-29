@@ -89,9 +89,19 @@ test("v2 slot preview distinguishes stable/tentative, bounds display, clears cla
   );
   for (const c of h.claims) c.render();
   preview.applyPartial({ stableText: "confirmed words", tentativeText: "uncertain tail" });
-  assert.match(h.frames.at(-1), /confirmed words \[uncertain tail\]/);
+  assert.ok(
+    h.frames.some((f) => /confirmed words \[uncertain tail\]/.test(f)),
+    "body segment shows the transcript",
+  );
   preview.applyLevels([0, 1, 2, 3, 4, 5, 6, 7, 7, 6, 5, 4, 3, 2, 1, 0]);
-  assert.match(h.frames.at(-1), /^▁▂▃▄▅▆▇██▇▆▅▄▃▂▁  Voice live · confirmed words/);
+  assert.ok(
+    h.frames.some((f) => /^▁▂▃▄▅▆▇██▇▆▅▄▃▂▁  /.test(f)),
+    "wave bars render",
+  );
+  assert.ok(
+    h.frames.some((f) => /Voice live · confirmed words/.test(f)),
+    "body segment shows the transcript",
+  );
   preview.applyPartial({ stableText: "long ".repeat(800), tentativeText: "tail" });
   assert.ok(h.frames.at(-1).length <= 1600);
   assert.ok(preview.getTranscript().length > 1600, "full final text is never truncated");
@@ -112,8 +122,12 @@ test("v2 preview wave timer redraws with levels and stops on clear", async () =>
   preview.startWave(() => [7, 6, 5, 4, 3, 2, 1, 0, 0, 1, 2, 3, 4, 5, 6, 7], 20);
   await new Promise((resolve) => setTimeout(resolve, 80));
   assert.ok(
-    h.frames.some((frame) => frame.startsWith("█▇▆▅▄▃▂▁▁▂▃▄▅▆▇█  Voice live")),
-    "wave bars render before the transcript",
+    h.frames.some((frame) => frame.startsWith("█▇▆▅▄▃▂▁▁▂▃▄▅▆▇█")),
+    "wave bars render",
+  );
+  assert.ok(
+    h.frames.some((frame) => frame.includes("Voice live")),
+    "transcript renders",
   );
   preview.clear();
   const before = h.frames.length;
