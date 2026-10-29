@@ -101,9 +101,9 @@ test("live-notes uses the shared rendezvous (no private client)", () => {
 
 test("streaming finalize never falls through to primary-chat append", () => {
   const src = fs.readFileSync(path.join(import.meta.dirname, "..", "lib", "stt.js"), "utf-8");
-  const finalizeIdx = src.indexOf("finalizeStreamingDictation");
+  const finalizeIdx = src.indexOf("async function finalizeStreamingDictation");
   assert.ok(finalizeIdx >= 0);
-  const finalizeSrc = src.slice(finalizeIdx, finalizeIdx + 6000);
+  const finalizeSrc = src.slice(finalizeIdx, finalizeIdx + 12000);
   assert.match(finalizeSrc, /insertIntoFocusedInput/);
   assert.doesNotMatch(finalizeSrc, /appendPrompt/);
   assert.doesNotMatch(finalizeSrc, /submitPrompt/);
@@ -113,9 +113,9 @@ test("streaming finalize never falls through to primary-chat append", () => {
 
 test("streaming finalize honors the owned range and targets the captured field", () => {
   const src = fs.readFileSync(path.join(import.meta.dirname, "..", "lib", "stt.js"), "utf-8");
-  const finalizeIdx = src.indexOf("finalizeStreamingDictation");
+  const finalizeIdx = src.indexOf("async function finalizeStreamingDictation");
   assert.ok(finalizeIdx >= 0);
-  const finalizeSrc = src.slice(finalizeIdx, finalizeIdx + 8000);
+  const finalizeSrc = src.slice(finalizeIdx, finalizeIdx + 12000);
   // editor.finalize already writes live-capable targets: its result decides
   // whether the single insert runs, otherwise every live dictation inserts
   // twice.
