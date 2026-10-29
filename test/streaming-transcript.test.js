@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   commonWordPrefixLength,
   createStabilityTracker,
+  normalizeStabilityWord,
   overlapJoinLength,
   splitWords,
   stripStablePrefix,
@@ -188,4 +189,98 @@ test("stripStablePrefix rejects shorter or divergent hypotheses", () => {
   assert.deepEqual(stripStablePrefix(splitWords("a b c"), splitWords("a b")), null);
   assert.deepEqual(stripStablePrefix(splitWords("a b"), splitWords("a c d")), null);
   assert.deepEqual(stripStablePrefix([], splitWords("x y")), ["x", "y"]);
+});
+
+test("diacritic-insensitive matching anchors Vietnamese re-decodes", () => {
+  assert.equal(normalizeStabilityWord("được"), "duoc");
+  assert.equal(normalizeStabilityWord("ĐỌC"), "doc");
+  assert.equal(normalizeStabilityWord("OpenCode"), "opencode");
+  assert.equal(normalizeStabilityWord("hướng-dẫn!"), "huongdan");
+  // Pure punctuation still only matches itself (no false friends).
+  assert.equal(
+    commonWordPrefixLength(splitWords("a -- b"), splitWords("a -- b")),
+    3,
+    "identical punctuation anchors",
+  );
+  assert.equal(
+    commonWordPrefixLength(splitWords("a -- b"), splitWords("a … b")),
+    1,
+    "distinct punctuation never equates",
+  );
+  // Tone-shifted re-decode of the same audio still overlaps.
+  assert.equal(
+    overlapJoinLength(splitWords("không render được trong"), splitWords("không render đươc trong")),
+    4,
+  );
+  assert.equal(commonWordPrefixLength(splitWords("đọc lại cái"), splitWords("đoc lại cái")), 3);
+});
+
+test("Vietnamese rolling windows with tone jitter neither lose nor duplicate", () => {
+  const t = createStabilityTracker();
+  let s = t.update("Tại sao cái mermaid này không render được trong OpenCode");
+  s = t.update("Tại sao cái mermaid này không render đươc trong OpenCode đọc lại cái instruction");
+  s = t.update(
+    "mermaid này không render được trong OpenCode đoc lại cái instruction trong việc sử dụng",
+  );
+  s = t.update(
+    "không render được trong OpenCode đọc lại cái instruction trong việc sữ dụng OpenCode",
+  );
+  s = t.update(
+    "đọc lại cái instruction trong việc sử dụng OpenCode trả về output mermaid cho OpenCode",
+  );
+  s = t.update("việc sử dụng OpenCode trả về output mermaid cho Opencode để nó render được");
+  // The head survives rolling windows despite per-window re-decoding.
+  assert.ok(s.stableText.startsWith("Tại sao cái mermaid"), `head kept: ${s.stableText}`);
+  const full = `${s.stableText} ${s.tentativeText}`.trim();
+  const vooCount = full.split("mermaid").length - 1;
+  assert.ok(vooCount <= 2, `no duplicated repeats, got: ${full}`);
+});
+
+test("final stop-tail decode covering from t=0 supersedes instead of appending", () => {
+  const t = createStabilityTracker();
+  t.update("Tại sao cái mermaid này không render được trong OpenCode");
+  t.update("Tại sao cái mermaid này không render được trong OpenCode đọc lại");
+  const s = t.update(
+    "Tại sao cái mermaid này không render được trong Opencodec đọc lại cái instruction",
+    { absoluteStartMs: 0, absoluteEndMs: 12000, seq: 3, final: true },
+  );
+  const done = t.commitTail();
+  assert.equal(
+    s.tentativeText,
+    "Tại sao cái mermaid này không render được trong Opencodec đọc lại cái instruction",
+  );
+  assert.equal(done.stableText, s.tentativeText, "final text is taken as-is, not merged");
+  assert.ok(
+    !/instruction.*instruction/.test(done.stableText),
+    `no duplication: ${done.stableText}`,
+  );
+  assert.ok(done.stableText.startsWith("Tại sao"), "utterance head preserved");
+});
+
+test("final tail covering only the tail still joins instead of replacing", () => {
+  const t = createStabilityTracker();
+  t.update("hello world this is");
+  t.update("hello world this is a test");
+  // Stop-tail covers only the trailing window: normal join, not a wipe.
+  const s = t.update("is a test of tails", {
+    absoluteStartMs: 8000,
+    absoluteEndMs: 10000,
+    seq: 5,
+    final: true,
+  });
+  const done = t.commitTail();
+  assert.equal(done.stableText, "hello world this is a test of tails");
+});
+
+test("collapsed final decode never wipes a good transcript", () => {
+  const t = createStabilityTracker();
+  t.update("hello world this is a fairly long dictation with many words in it");
+  t.update("hello world this is a fairly long dictation with many words in it indeed");
+  // Model collapsed to two words on the stop tail: keep the assembly.
+  const s = t.update("cảm ơn", { absoluteStartMs: 0, absoluteEndMs: 20000, seq: 9, final: true });
+  const done = t.commitTail();
+  assert.ok(
+    done.stableText.includes("fairly long dictation"),
+    `assembly preserved, got: ${done.stableText}`,
+  );
 });

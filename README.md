@@ -553,15 +553,15 @@ If a path is not set, the built-in default prompt is used.
 
 ### Speech-to-text
 
-| Command         | Keybind    | Description                            |
-| --------------- | ---------- | -------------------------------------- |
-| `/stt-record`   | `ctrl+r`   | Start/stop recording + transcribe      |
-| `/stt-submit`   | `leader+r` | Stop recording, transcribe, and submit |
-| `/stt-stop`     |            | Cancel recording                       |
+| Command         | Keybind    | Description                                                                |
+| --------------- | ---------- | -------------------------------------------------------------------------- |
+| `/stt-record`   | `ctrl+r`   | Start/stop recording + transcribe                                          |
+| `/stt-submit`   | `leader+r` | Stop recording, transcribe, and submit                                     |
+| `/stt-stop`     |            | Cancel recording                                                           |
 | `/stt-pause`    |            | Pause/resume live dictation (streaming only; mic frozen, nothing recorded) |
-| `/stt-model`    |            | Select whisper model                   |
-| `/stt-language` |            | Select transcription language          |
-| `/stt-mic`      |            | Select microphone                      |
+| `/stt-model`    |            | Select whisper model                                                       |
+| `/stt-language` |            | Select transcription language                                              |
+| `/stt-mic`      |            | Select microphone                                                          |
 
 `/stt-mic` lists CoreAudio input devices on macOS, and PulseAudio sources on
 Linux (via `pactl`, monitor sources excluded). On systems without a supported
