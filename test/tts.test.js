@@ -117,6 +117,23 @@ test("skips code-like sentences", () => {
   assert.equal(isSpeakableSentence(""), false);
 });
 
+test("successful narrator output cannot pass raw Mermaid to speech", () => {
+  const result = resolveSpeechText("source", {
+    text: "Overview:\n```mermaid\nflowchart TD\nA[Request] --> B[Response]\n```\nDone.",
+  });
+  assert.doesNotMatch(result.text, /```|-->|flowchart TD/);
+  assert.match(result.text, /Request/);
+  assert.match(result.text, /Done/);
+});
+
+test("successful narrator output cannot pass a literal table to speech", () => {
+  const result = resolveSpeechText("source", {
+    text: "| Name | Status |\n| --- | --- |\n| build | pass |",
+  });
+  assert.doesNotMatch(result.text, /\|/);
+  assert.match(result.text, /build/);
+});
+
 test("speech text survives an unavailable narrator", () => {
   // Narrator ok -> passthrough, no fallback flag.
   assert.deepEqual(resolveSpeechText("raw text", { text: "Narrated text." }), {
