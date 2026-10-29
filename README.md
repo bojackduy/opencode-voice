@@ -608,7 +608,7 @@ One key drives the whole loop. It always means the same thing - "I want the
 floor" - and what it does follows the toast on screen:
 
 ```
-press -> record -> press -> transcribe -> normalize -> submit -> speak -> press ...
+press -> record -> press -> transcribe -> normalize -> submit -> speak -> auto-listen ...
 ```
 
 | Toast shows              | Pressing the key does                     |
@@ -623,6 +623,10 @@ The loop never reopens the mic by itself: after a reply is spoken the mode rests
 paused, so it cannot record the room while nobody is talking. Barge-in drops
 the pending reply on purpose - pressing means talking now, not hearing the
 rest.
+
+**Hands-free mode:** In streaming mode, recording auto-finalizes after 1.5s of
+silence (no keypress needed). After the reply is spoken, the mic re-opens
+automatically after a short delay. Press the key to barge in at any time.
 
 Answering a permission or a question is the one thing the key cannot do,
 because that answer is given on screen. The mode announces the gate, keeps the
