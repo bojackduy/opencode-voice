@@ -687,7 +687,7 @@ test("piper audio is buffered and played with an exact measured total", async ()
   const speaking = controller.speak("Hello there.");
   await settleTwice();
   assert.equal(audio.spawns.length, 1);
-  assert.deepEqual(audio.spawns[0].argv, ["-q", "-"], "neutral playback carries no effects");
+  assert.deepEqual(audio.spawns[0].argv, ["-q", "--buffer", "1024", "-"], "neutral playback carries no effects");
   assert.equal(audio.spawns[0].fed.length, 44 + monoPcm16(4).length, "full WAV fed to play");
   audio.spawns[0].emitClose(0);
   await speaking;
