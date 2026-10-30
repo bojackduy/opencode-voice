@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opencode-voice — Voice in and voice out for OpenCode</title>
+    <meta
+      name="description"
+      content="Local-first speech-to-text and text-to-speech plugin for OpenCode. Dictate prompts with whisper, hear responses via Piper/VieNeu, bilingual vi+en, hands-free conversation mode."
+    />
+    <meta
+      name="keywords"
+      content="opencode, voice, speech to text, text to speech, whisper, piper, tts, stt, cli, plugin, terminal, local-first, bilingual, vietnamese"
+    />
+    <link rel="canonical" href="https://bojackduy.github.io/opencode-voice/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="opencode-voice — Voice in and voice out for OpenCode" />
+    <meta
+      property="og:description"
+      content="Local-first STT + TTS for OpenCode. Dictate prompts, hear responses, bilingual vi+en, hands-free conversation."
+    />
+    <meta property="og:image" content="https://bojackduy.github.io/opencode-voice/og.png" />
+    <meta property="og:url" content="https://bojackduy.github.io/opencode-voice/" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="opencode-voice — Voice in and voice out for OpenCode" />
+    <meta
+      name="twitter:description"
+      content="Local-first STT + TTS for OpenCode. Dictate prompts, hear responses, bilingual vi+en."
+    />
+    <meta name="twitter:image" content="https://bojackduy.github.io/opencode-voice/og.png" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              ink: "#0b0f14",
+              panel: "#121821",
+              line: "#1f2937",
+              accent: "#22d3ee",
+              accent2: "#a78bfa",
+              muted: "#94a3b8",
+            },
+            fontFamily: {
+              mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        background: #0b0f14;
+        color: #e2e8f0;
+      }
+      .grad {
+        background: linear-gradient(135deg, #22d3ee 0%, #a78bfa 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .card {
+        background: #121821;
+        border: 1px solid #1f2937;
+      }
+      .btn-primary {
+        background: #22d3ee;
+        color: #0b0f14;
+      }
+      .btn-primary:hover {
+        background: #67e8f9;
+      }
+      .btn-ghost {
+        border: 1px solid #1f2937;
+        color: #e2e8f0;
+      }
+      .btn-ghost:hover {
+        border-color: #22d3ee;
+        color: #22d3ee;
+      }
+      pre {
+        background: #0f141b;
+        border: 1px solid #1f2937;
+      }
+      .glow {
+        box-shadow: 0 0 80px -20px rgba(34, 211, 238, 0.35);
+      }
+    </style>
+  </head>
+  <body class="antialiased">
+    <!-- NAV -->
+    <nav class="sticky top-0 z-40 backdrop-blur bg-ink/80 border-b border-line">
+      <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+        <a href="#" class="flex items-center gap-2 font-mono text-sm">
+          <img src="logo.svg" alt="" width="24" height="24" class="rounded" />
+          <span class="font-semibold">opencode-voice</span>
+        </a>
+        <div class="flex items-center gap-6 text-sm text-muted">
+          <a href="#features" class="hover:text-white">Features</a>
+          <a href="#install" class="hover:text-white">Install</a>
+          <a href="#faq" class="hover:text-white">FAQ</a>
+          <a
+            href="https://github.com/bojackduy/opencode-voice"
+            class="hover:text-white"
+            target="_blank"
+            rel="noopener"
+            >GitHub</a
+          >
+        </div>
+      </div>
+    </nav>
+
+    <!-- HERO -->
+    <section class="max-w-6xl mx-auto px-6 pt-20 pb-16">
+      <div class="grid lg:grid-cols-2 gap-12 items-center">
+        <div>
+          <p class="text-accent font-mono text-sm mb-4">OpenCode plugin · v0.11.3</p>
+          <h1 class="text-5xl lg:text-6xl font-bold leading-tight mb-6">
+            Voice in.<br />
+            <span class="grad">Voice out.</span><br />
+            For OpenCode.
+          </h1>
+          <p class="text-lg text-muted mb-8 max-w-xl">
+            Dictate prompts with local whisper. Hear responses spoken aloud via Piper. Bilingual
+            Vietnamese + English. Hands-free conversation mode. Nothing leaves your machine unless
+            you want it to.
+          </p>
+          <div class="flex flex-wrap gap-3 mb-6">
+            <a
+              href="https://github.com/bojackduy/opencode-voice"
+              class="btn-primary px-5 py-3 rounded-lg font-semibold"
+              target="_blank"
+              rel="noopener"
+              >View on GitHub →</a
+            >
+            <a href="#install" class="btn-ghost px-5 py-3 rounded-lg font-semibold"
+              >Install in 2 min</a
+            >
+          </div>
+          <div class="flex items-center gap-4 text-xs text-muted font-mono">
+            <span>AGPL-3.0</span>
+            <span>·</span>
+            <span>Local-first</span>
+            <span>·</span>
+            <span>v1 + v2</span>
+          </div>
+        </div>
+        <div class="glow rounded-xl overflow-hidden border border-line">
+          <img
+            src="assets/demo.gif"
+            alt="opencode-voice demo: browsing voice commands in OpenCode"
+            class="w-full"
+          />
+        </div>
+      </div>
+    </section>
+
+    <!-- PROBLEM -->
+    <section class="max-w-6xl mx-auto px-6 py-16">
+      <div class="max-w-3xl">
+        <h2 class="text-3xl font-bold mb-4">Typing prompts. Reading responses. Breaking flow.</h2>
+        <p class="text-muted text-lg mb-6">
+          Long, detailed prompts are slow to type. Long assistant responses pull your eyes off the
+          code. Generic dictation tools don't know about your editor, your model, or your codebase —
+          and cloud voice tools send audio you'd rather keep local.
+        </p>
+        <p class="text-muted">
+          opencode-voice lives inside OpenCode. It inserts transcripts at your cursor as editable
+          text (it never auto-sends), and speaks replies aloud with code-aware normalization. Voice
+          becomes a first-class input and output, not a sidecar.
+        </p>
+      </div>
+    </section>
+
+    <!-- FEATURES -->
+    <section id="features" class="max-w-6xl mx-auto px-6 py-16">
+      <h2 class="text-3xl font-bold mb-10">Built for how developers actually work</h2>
+      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div class="card rounded-xl p-6">
+          <div class="text-accent text-2xl mb-3">🎙</div>
+          <h3 class="font-semibold mb-2">Streaming dictation</h3>
+          <p class="text-muted text-sm">
+            Live waveform + live transcript above the prompt. Stable words plain, tentative tail
+            bracketed. Pause, auto-end, auto-submit toggles.
+          </p>
+        </div>
+        <div class="card rounded-xl p-6">
+          <div class="text-accent text-2xl mb-3">🔊</div>
+          <h3 class="font-semibold mb-2">Code-aware TTS</h3>
+          <p class="text-muted text-sm">
+            Piper, Chatterbox, or VieNeu. Per-sentence language routing. LLM summarizes code,
+            diagrams, and tables into speakable prose.
+          </p>
+        </div>
+        <div class="card rounded-xl p-6">
+          <div class="text-accent text-2xl mb-3">🌐</div>
+          <h3 class="font-semibold mb-2">Bilingual vi + en</h3>
+          <p class="text-muted text-sm">
+            VieNeu-TTS code-switches Vietnamese and English in one utterance. No separate voice
+            models, no stitching.
+          </p>
+        </div>
+        <div class="card rounded-xl p-6">
+          <div class="text-accent text-2xl mb-3">🗣</div>
+          <h3 class="font-semibold mb-2">Hands-free conversation</h3>
+          <p class="text-muted text-sm">
+            Auto-silence finalize, auto-listen after reply, barge-in. Phase-aware clickable status
+            line.
+          </p>
+        </div>
+        <div class="card rounded-xl p-6">
+          <div class="text-accent text-2xl mb-3">🔒</div>
+          <h3 class="font-semibold mb-2">Local-first</h3>
+          <p class="text-muted text-sm">
+            whisper-cpp + sox + Piper on your machine. Audio stays local. Hosted endpoint optional.
+          </p>
+        </div>
+        <div class="card rounded-xl p-6">
+          <div class="text-accent text-2xl mb-3">⌨️</div>
+          <h3 class="font-semibold mb-2">Terminal-native</h3>
+          <p class="text-muted text-sm">
+            Runs inside OpenCode v1 and v2 via capability detection. 19 commands, leader keybinds,
+            palette + slash.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- INSTALL -->
+    <section id="install" class="max-w-6xl mx-auto px-6 py-16">
+      <h2 class="text-3xl font-bold mb-4">Install in two minutes</h2>
+      <p class="text-muted mb-8">
+        Prerequisites:
+        <code class="font-mono text-accent">brew install whisper-cpp sox</code> (macOS) and a Piper
+        binary + voice model.
+      </p>
+      <div class="grid lg:grid-cols-2 gap-6">
+        <div class="card rounded-xl p-6">
+          <p class="text-sm text-muted mb-3 font-mono">OpenCode v2 (cli.json)</p>
+          <pre class="rounded-lg p-4 text-sm overflow-x-auto"><code>{
+  "plugins": [{
+    "package": "@bojackduy/opencode-voice",
+    "options": {
+      "endpoint": "https://api.anthropic.com/v1",
+      "model": "claude-haiku-4-5",
+      "apiKeyEnv": "ANTHROPIC_API_KEY"
+    }
+  }]
+}</code></pre>
+        </div>
+        <div class="card rounded-xl p-6">
+          <p class="text-sm text-muted mb-3 font-mono">OpenCode v1 (tui.json)</p>
+          <pre class="rounded-lg p-4 text-sm overflow-x-auto"><code>{
+  "plugins": [
+    "opencode-voice"
+  ]
+}</code></pre>
+          <p class="text-xs text-muted mt-3">
+            Then run
+            <code class="font-mono text-accent">npm i -g @bojackduy/opencode-voice</code> and
+            configure via tui.json plugin options.
+          </p>
+        </div>
+      </div>
+      <div class="mt-8 flex flex-wrap gap-3">
+        <a
+          href="https://www.npmjs.com/package/@bojackduy/opencode-voice"
+          class="btn-ghost px-5 py-3 rounded-lg font-semibold"
+          target="_blank"
+          rel="noopener"
+          >npm package</a
+        >
+        <a
+          href="https://github.com/bojackduy/opencode-voice#install"
+          class="btn-ghost px-5 py-3 rounded-lg font-semibold"
+          target="_blank"
+          rel="noopener"
+          >Full install guide</a
+        >
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section id="faq" class="max-w-6xl mx-auto px-6 py-16">
+      <h2 class="text-3xl font-bold mb-10">Frequently asked</h2>
+      <div class="space-y-4 max-w-3xl">
+        <details class="card rounded-xl p-5">
+          <summary class="font-semibold cursor-pointer">Does it auto-send my transcript?</summary>
+          <p class="text-muted text-sm mt-3">
+            No. Transcripts are inserted at your cursor as editable text. Nothing is submitted
+            unless you use /stt-submit, enable sttAutoSubmit, or use conversation mode.
+          </p>
+        </details>
+        <details class="card rounded-xl p-5">
+          <summary class="font-semibold cursor-pointer">Does audio leave my machine?</summary>
+          <p class="text-muted text-sm mt-3">
+            By default, no. STT runs whisper-cpp locally; TTS runs Piper/Chatterbox/VieNeu locally.
+            The only network calls are to your configured LLM endpoint for text normalization. A
+            hosted STT endpoint is optional.
+          </p>
+        </details>
+        <details class="card rounded-xl p-5">
+          <summary class="font-semibold cursor-pointer">
+            Which OpenCode versions are supported?
+          </summary>
+          <p class="text-muted text-sm mt-3">
+            Both v1 and v2, via capability detection (never version-string checks). All 19 commands
+            register on both.
+          </p>
+        </details>
+        <details class="card rounded-xl p-5">
+          <summary class="font-semibold cursor-pointer">Can it speak Vietnamese?</summary>
+          <p class="text-muted text-sm mt-3">
+            Yes. VieNeu-TTS handles Vietnamese + English code-switching in a single utterance. Piper
+            and Chatterbox are English-focused. Select the engine with /tts-engine.
+          </p>
+        </details>
+        <details class="card rounded-xl p-5">
+          <summary class="font-semibold cursor-pointer">Is it free?</summary>
+          <p class="text-muted text-sm mt-3">
+            Yes, AGPL-3.0. Free to use, modify, and self-host. Support development via GitHub
+            Sponsors.
+          </p>
+        </details>
+      </div>
+    </section>
+
+    <!-- FINAL CTA -->
+    <section class="max-w-6xl mx-auto px-6 py-20 text-center">
+      <h2 class="text-4xl font-bold mb-4">Stop typing. Start talking.</h2>
+      <p class="text-muted mb-8">Open source. Local-first. Bilingual. Terminal-native.</p>
+      <div class="flex flex-wrap justify-center gap-3">
+        <a
+          href="https://github.com/bojackduy/opencode-voice"
+          class="btn-primary px-6 py-3 rounded-lg font-semibold"
+          target="_blank"
+          rel="noopener"
+          >Star on GitHub</a
+        >
+        <a href="#install" class="btn-ghost px-6 py-3 rounded-lg font-semibold">Install now</a>
+      </div>
+    </section>
+
+    <!-- FOOTER -->
+    <footer class="border-t border-line">
+      <div
+        class="max-w-6xl mx-auto px-6 py-8 flex flex-wrap items-center justify-between gap-4 text-sm text-muted"
+      >
+        <span>© 2026 opencode-voice · AGPL-3.0</span>
+        <div class="flex gap-6">
+          <a
+            href="https://github.com/bojackduy/opencode-voice"
+            class="hover:text-white"
+            target="_blank"
+            rel="noopener"
+            >GitHub</a
+          >
+          <a
+            href="https://www.npmjs.com/package/@bojackduy/opencode-voice"
+            class="hover:text-white"
+            target="_blank"
+            rel="noopener"
+            >npm</a
+          >
+          <a
+            href="https://github.com/bojackduy/opencode-voice/blob/master/README.md"
+            class="hover:text-white"
+            target="_blank"
+            rel="noopener"
+            >Docs</a
+          >
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>
+EOF echo "written"; wc -l docs/index.html

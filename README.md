@@ -586,18 +586,18 @@ paused resumes instead of finalizing.
 The `leader` key in OpenCode is `ctrl+x`. So `leader+s` means press `ctrl+x`
 then `s`.
 
-| Command      | Keybind    | Description              |
-| ------------ | ---------- | ------------------------ |
-| `/tts-speak` | `leader+s` | Read last response aloud |
-| `/tts-mode`  |            | Toggle auto TTS on/off   |
-| `/tts-stop`  |            | Stop playback (palette; global `leader+.` also stops) |
-| `/tts-voice` |            | Select TTS voice         |
-| `/tts-engine`|            | Select TTS engine (piper / chatterbox / vieneu) |
-| `/tts-pause` |            | Pause/resume TTS playback (mid-speech, no restart) |
-| `/tts-replay`| `leader+0` | Replay from start        |
-| `/tts-rewind`| `leader+-` | Rewind 5 seconds         |
-| `/tts-forward`| `leader+=`| Forward 5 seconds        |
-| `/tts-rate`  |            | Cycle/select playback speed 0.75x-2x (persisted) |
+| Command        | Keybind    | Description                                           |
+| -------------- | ---------- | ----------------------------------------------------- |
+| `/tts-speak`   | `leader+s` | Read last response aloud                              |
+| `/tts-mode`    |            | Toggle auto TTS on/off                                |
+| `/tts-stop`    |            | Stop playback (palette; global `leader+.` also stops) |
+| `/tts-voice`   |            | Select TTS voice                                      |
+| `/tts-engine`  |            | Select TTS engine (piper / chatterbox / vieneu)       |
+| `/tts-pause`   |            | Pause/resume TTS playback (mid-speech, no restart)    |
+| `/tts-replay`  | `leader+0` | Replay from start                                     |
+| `/tts-rewind`  | `leader+-` | Rewind 5 seconds                                      |
+| `/tts-forward` | `leader+=` | Forward 5 seconds                                     |
+| `/tts-rate`    |            | Cycle/select playback speed 0.75x-2x (persisted)      |
 
 ### Voice conversation
 
@@ -889,23 +889,42 @@ When enabled (`/tts-mode`), the plugin automatically speaks:
 ## Demo
 
 The GIF above was recorded with `asciinema` + `agg` driving the OpenCode TUI
-via `tmux`. To regenerate it after changing commands or UI:
+via `tmux` (playback sped up 2x, idle capped at 0.5s). To regenerate it:
 
 ```bash
-scripts/record-demo.sh assets/demo.cast /path/to/project
-agg assets/demo.cast assets/demo.gif
+scripts/record-fullflow.sh assets/demo.cast /path/to/project
+agg assets/demo.cast assets/demo.gif --speed 2 --idle-time-limit 0.5
 ```
 
 Requires `tmux`, `asciinema`, and `agg` on PATH.
 
-For a **full voice demo** (waveform + conversation UI, needs a working mic and
-whisper model), run the provided expect script locally:
+### Manual full-voice demo (real audio + waveform)
+
+For a demo with real microphone audio and the recording waveform, use the
+full-stack recorder (terminal + mic → MP4 with audio):
 
 ```bash
-scripts/record-voice.sh assets/voice.cast /path/to/project
-# or drive manually:
-expect scripts/demo-voice.exp   # inside an asciinema session
+scripts/record-with-audio.sh demo /path/to/project
 ```
+
+Speak during the `stt record` step; the script muxes your voice into the
+final MP4. Requires `tmux`, `asciinema`, `agg`, `sox`, and `ffmpeg`.
+
+Or record by hand:
+
+1. `asciinema rec -c 'opencode' assets/voice.cast` (in your project dir).
+2. Open command palette (`Ctrl+P`) and run, in order, with ~3–5s pauses:
+   - `tts engine` → pick piper / chatterbox / vieneu
+   - `tts voice` → pick a voice
+   - `stt mic` → pick your mic
+   - `tts rate` → pick a speed
+   - `stt record` → **speak** (waveform shows) → `stt submit`
+   - wait for the agent reply to finish, then `tts speak`
+   - `voice conversation` → speak → `voice conversation stop`
+3. `Ctrl+C` to end, then `agg assets/voice.cast assets/voice.gif --speed 2 --idle-time-limit 0.5`.
+
+The provided `scripts/demo-voice.exp` automates the keystrokes (no audio);
+run it inside an asciinema session if you only need a UI walkthrough.
 
 ## Contributing
 
