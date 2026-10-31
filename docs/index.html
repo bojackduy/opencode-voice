@@ -593,8 +593,8 @@
             <h1>Voice in.<br /><span class="accent">Voice out.</span><br />For OpenCode.</h1>
             <p class="lede">
               Dictate prompts with local whisper. Hear responses spoken aloud via Piper. Bilingual
-              Vietnamese + English. Hands-free conversation mode. Nothing leaves your machine unless
-              you want it to.
+              Vietnamese + English with 25 VieNeu voices. Hands-free conversation mode. Use your
+              phone as a mic over SSH. Nothing leaves your machine unless you want it to.
             </p>
             <div class="cta-row">
               <a
@@ -844,6 +844,43 @@
             <p>
               Pause, resume, stop, replay, rewind 5s, forward 5s, speed 0.75x–2x. Clickable
               now-playing line.
+            </p>
+          </div>
+          <div class="cell">
+            <svg
+              class="icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              aria-hidden="true"
+            >
+              <rect x="2" y="3" width="20" height="14" rx="2" />
+              <path d="M8 21h8M12 17v4" />
+            </svg>
+            <h3>remote audio (phone)</h3>
+            <p>
+              Use your phone as a microphone over SSH. Set STT_CAPTURE_CMD and TTS_PLAY_CMD — no
+              local mic needed.
+            </p>
+          </div>
+          <div class="cell">
+            <svg
+              class="icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              aria-hidden="true"
+            >
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <line x1="12" y1="19" x2="12" y2="22" />
+            </svg>
+            <h3>25 vieleu voices</h3>
+            <p>
+              Pick from 25 VieNeu voices with /tts-vieneu-voice. Bilingual vi+en code-switching in
+              one utterance.
             </p>
           </div>
         </div>
