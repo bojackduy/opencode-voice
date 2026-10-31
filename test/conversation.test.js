@@ -138,6 +138,8 @@ function makeHarness({ transcribe = { text: "hello" }, opts = {} } = {}) {
     calls,
     stateData,
     controller,
+    stt,
+    tts,
     setSpeakGate: (p) => {
       speakGate = p;
     },
@@ -147,14 +149,34 @@ function makeHarness({ transcribe = { text: "hello" }, opts = {} } = {}) {
   };
 }
 
-function fireEvent(handlers, type, sessionID = "s1") {
+function fireEvent(handlers, type, sessionID = "s1", data = {}) {
   for (const handler of handlers[type] || []) {
-    handler({ properties: { sessionID } });
+    handler({ properties: { sessionID, ...data } });
   }
 }
 
+// A finished assistant message is what makes the wait trustworthy: the loop
+// only accepts a reply that arrived after submit, so every idle/execution
+// event needs the message the host would have written by then.
+function addReply(h, { id, finish = "stop" } = {}) {
+  const messageID = id ?? `a${h.stateData.messages.length + 1}`;
+  h.stateData.messages.push({
+    id: messageID,
+    role: "assistant",
+    finish,
+    time: { created: Date.now() },
+  });
+  h.stateData.parts[messageID] = [{ id: `${messageID}:0`, type: "text", text: "reply" }];
+  return messageID;
+}
+
 function fireIdle(h) {
-  fireEvent(h, "session.idle");
+  addReply(h);
+  fireEvent(h.handlers, "session.idle");
+}
+
+function fireExecution(h, type, data = {}) {
+  fireEvent(h.handlers, `session.execution.${type}`, "s1", data);
 }
 
 test("start leaves the mic closed until the key is pressed", () => {
@@ -169,7 +191,32 @@ test("start leaves the mic closed until the key is pressed", () => {
   assert.equal(h.calls.stopHint, null);
 });
 
-test("full turn rests paused after speaking, next key starts turn 2", async () => {
+test("streaming conversation keeps its finalize callback when auto-end is off", () => {
+  const h = makeHarness();
+  h.api.kv = {
+    get: (key) =>
+      key === "stt.mode" ? "streaming" : key === "stt.autoEndOfSpeech" ? false : undefined,
+  };
+  const finals = [];
+  Object.assign(h.stt, {
+    isStreaming: () => false,
+    startStreaming: () => true,
+    setConversationStreamingEnabled: () => {},
+    setConversationStreamingFinalize: (sec, cb) => finals.push({ sec, cb }),
+  });
+  h.controller.onKey();
+  h.controller.onKey();
+  const last = finals.at(-1);
+  assert.equal(last?.sec, null, "auto-end stays off");
+  assert.equal(
+    typeof last?.cb,
+    "function",
+    "stop callback stays registered so the STT timer can route to conversation",
+  );
+  h.controller.stop("test");
+});
+
+test("full turn speaks the reply, then reopens the mic hands-free", async () => {
   const h = makeHarness();
   h.controller.onKey();
   h.controller.onKey();
@@ -177,13 +224,14 @@ test("full turn rests paused after speaking, next key starts turn 2", async () =
   h.controller.onKey();
   await tick(30);
   assert.deepEqual(h.calls.submitted, ["hello"]);
-  fireIdle(h.handlers);
+  fireIdle(h);
   await tick(30);
   assert.equal(h.calls.speakTurn, 1);
-  // Push-to-talk: the loop must never reopen the mic by itself.
+  // Speaking first, mic still closed while the audio plays.
   assert.equal(h.calls.sttStart, 1);
-  assert.ok(h.toasts.some((t) => t.includes("Press <leader>v to talk")));
-  h.controller.onKey();
+  assert.ok(h.toasts.some((t) => t.includes("Speaking")));
+  // Hands-free: once playback ends the next turn records without a keypress.
+  await tick(700);
   assert.equal(h.calls.sttStart, 2);
   h.controller.stop("test");
 });
@@ -196,7 +244,7 @@ test("speaking + key barges in: cuts audio and opens the mic in one press", asyn
   h.controller.onKey();
   h.controller.onKey();
   await tick(30);
-  fireIdle(h.handlers);
+  fireIdle(h);
   await tick(20);
   assert.equal(h.calls.speakTurn, 1);
   h.controller.onKey();
@@ -233,7 +281,7 @@ test("toggle while waiting barges in and drops the late reply", async () => {
   assert.equal(h.controller.isActive(), true);
   assert.ok(!h.toasts.includes("Conversation off"));
   assert.equal(h.calls.sttStart, 2);
-  fireIdle(h.handlers);
+  fireIdle(h);
   await tick(30);
   assert.equal(h.calls.speakTurn, 0);
   assert.deepEqual(h.calls.speakCalls, []);
@@ -271,24 +319,10 @@ test("question gate keeps the mic shut and speaks the post-answer reply", async 
   assert.equal(h.calls.sttStart, 1);
   assert.ok(h.toasts.some((t) => t.includes("Answer on screen")));
   // The agent resumes: its answer must be spoken (this used to be silent).
-  h.stateData.messages.push({ id: "a1", role: "assistant", time: { created: Date.now() } });
-  h.stateData.parts["a1"] = [{ id: "p1", type: "text", text: "" }];
-  for (const handler of h.handlers["message.part.delta"] || []) {
-    handler({
-      properties: {
-        sessionID: "s1",
-        messageID: "a1",
-        partID: "p1",
-        field: "text",
-        delta: "The answer is 42.",
-      },
-    });
-  }
-  await tick(20);
-  assert.ok(h.calls.speakCalls.includes("The answer is 42."));
-  fireIdle(h.handlers);
-  await tick(30);
-  assert.equal(h.calls.speakFull, 0);
+  addReply(h, { id: "a1" });
+  fireExecution(h, "succeeded", { executionID: "e1" });
+  await tick(40);
+  assert.equal(h.calls.speakFull, 1);
   assert.equal(h.calls.sttStart, 1);
   h.controller.stop("test");
 });
@@ -308,7 +342,7 @@ test("permission gate + press barges in: pending answer dropped, mic opens", asy
   assert.ok(h.calls.ttsStop > stopsBefore);
   assert.equal(h.calls.sttStart, 2);
   // A late idle must not resurrect the answer that was abandoned.
-  fireIdle(h.handlers);
+  fireIdle(h);
   await tick(30);
   assert.equal(h.calls.speakFull, 0);
   assert.deepEqual(h.calls.submitted, ["hello"]);
@@ -327,24 +361,20 @@ test("phase toasts name the configured key", async () => {
   h.controller.onKey();
   await tick(30);
   assert.ok(h.toasts.some((t) => t.includes("Working - press ctrl+b to talk")));
-  fireIdle(h.handlers);
+  fireIdle(h);
   await tick(20);
   assert.ok(h.toasts.some((t) => t.includes("Speaking - press ctrl+b to interrupt")));
   h.controller.stop("test");
   release();
 });
 
-test("streams reply deltas while waiting, skips full speak", async () => {
+test("mid-turn deltas stay unspoken; the finished reply is voiced once", async () => {
   const h = makeHarness();
   h.controller.onKey();
   h.controller.onKey();
   h.controller.onKey();
   await tick(30);
-  h.stateData.messages.push({ id: "a1", role: "assistant", time: { created: Date.now() } });
-  h.stateData.parts["a1"] = [
-    { id: "p1", type: "text", text: "" },
-    { id: "p2", type: "reasoning", text: "" },
-  ];
+  addReply(h, { id: "a1", finish: "tool-calls" });
   const delta = (partID, text) => ({
     properties: { sessionID: "s1", messageID: "a1", partID, field: "text", delta: text },
   });
@@ -354,21 +384,24 @@ test("streams reply deltas while waiting, skips full speak", async () => {
     handler(delta("p1", "you?"));
   }
   await tick(20);
-  assert.deepEqual(h.calls.speakCalls, ["Hello world.", "How are you?"]);
-  fireIdle(h.handlers);
-  await tick(30);
-  assert.equal(h.calls.speakFull, 0);
+  assert.deepEqual(h.calls.speakCalls, [], "live deltas are commentary, not the answer");
+  assert.equal(h.calls.speakFull, 0, "the turn is still running");
+  addReply(h, { id: "a2" });
+  fireExecution(h, "succeeded", { executionID: "e1" });
+  await tick(40);
+  assert.equal(h.calls.speakFull, 1);
+  assert.deepEqual(h.calls.speakCalls, []);
   assert.equal(h.calls.sttStart, 1);
   h.controller.stop("test");
 });
 
-test("falls back to full speak when nothing streamable arrives", async () => {
+test("speaks the finished reply once, then rests with the mic closed", async () => {
   const h = makeHarness();
   h.controller.onKey();
   h.controller.onKey();
   h.controller.onKey();
   await tick(30);
-  fireIdle(h.handlers);
+  fireIdle(h);
   await tick(30);
   assert.equal(h.calls.speakFull, 1);
   assert.equal(h.calls.sttStart, 1);
@@ -384,7 +417,7 @@ test("tts stop key pauses speaking, ignored when inactive", async () => {
   h.controller.onKey();
   h.controller.onKey();
   await tick(30);
-  fireIdle(h.handlers);
+  fireIdle(h);
   await tick(20);
   assert.equal(h.controller.onTtsStop(), true);
   assert.equal(h.calls.ttsStop, 1);
@@ -428,34 +461,96 @@ test("custom stop phrases take full control with exact matching", async () => {
   h.controller.stop("test");
 });
 
-test("queued sentences still drain after the turn flips to speaking", async () => {
-  const h = makeHarness();
-  let releaseSpeak;
-  h.setSpeakWordGate(new Promise((r) => (releaseSpeak = r)));
+test("a tool-call finish does not end the turn or speak early", async () => {
+  // These turns outlive the harness default reply timeout on purpose.
+  const h = makeHarness({ opts: { conversationTimeoutMs: 5000 } });
   h.controller.onKey();
   h.controller.onKey();
   h.controller.onKey();
   await tick(30);
-  h.stateData.messages.push({ id: "a1", role: "assistant", time: { created: Date.now() } });
-  h.stateData.parts["a1"] = [{ id: "p1", type: "text", text: "" }];
-  for (const handler of h.handlers["message.part.delta"] || []) {
-    handler({
-      properties: {
-        sessionID: "s1",
-        messageID: "a1",
-        partID: "p1",
-        field: "text",
-        delta: "Hello world. ",
-      },
-    });
-  }
-  await tick(20);
-  // Real TTS latency: the first sentence is still speaking when the turn
-  // finishes and flips to speaking before the tail flush.
-  fireIdle(h.handlers);
-  await tick(20);
-  releaseSpeak();
+  addReply(h, { id: "a1", finish: "tool-calls" });
+  fireEvent(h.handlers, "session.idle");
+  await tick(40);
+  assert.equal(h.calls.speakFull, 0, "an idle between tool calls is not the end");
+  addReply(h, { id: "a2" });
+  fireExecution(h, "succeeded", { executionID: "e1" });
+  await tick(40);
+  assert.equal(h.calls.speakFull, 1);
+  h.controller.stop("test");
+});
+
+test("a reply left over from the previous turn cannot satisfy the wait", async () => {
+  // These turns outlive the harness default reply timeout on purpose.
+  const h = makeHarness({ opts: { conversationTimeoutMs: 5000 } });
+  // Turn 1 already produced an assistant message; it must never be mistaken
+  // for turn 2's answer (this is what spoke an empty reply ~800ms early).
+  h.stateData.messages.push(
+    { id: "u1", role: "user", time: { created: Date.now() } },
+    { id: "a1", role: "assistant", finish: "stop", time: { created: Date.now() } },
+  );
+  h.controller.onKey();
+  h.controller.onKey();
+  h.controller.onKey();
   await tick(30);
-  assert.ok(h.calls.speakCalls.includes("Hello world."));
+  fireEvent(h.handlers, "session.idle");
+  await tick(40);
+  assert.equal(h.calls.speakFull, 0, "stale assistant message must not end the wait");
+  addReply(h, { id: "a2" });
+  fireExecution(h, "succeeded", { executionID: "e2" });
+  await tick(40);
+  assert.equal(h.calls.speakFull, 1);
+  h.controller.stop("test");
+});
+
+test("execution events from another session are ignored", async () => {
+  // These turns outlive the harness default reply timeout on purpose.
+  const h = makeHarness({ opts: { conversationTimeoutMs: 5000 } });
+  h.controller.onKey();
+  h.controller.onKey();
+  h.controller.onKey();
+  await tick(30);
+  addReply(h, { id: "a1" });
+  fireEvent(h.handlers, "session.execution.succeeded", "other", { executionID: "e9" });
+  await tick(40);
+  assert.equal(h.calls.speakFull, 0);
+  fireExecution(h, "succeeded", { executionID: "e1" });
+  await tick(40);
+  assert.equal(h.calls.speakFull, 1);
+  h.controller.stop("test");
+});
+
+test("a stale execution id cannot end the current turn", async () => {
+  // These turns outlive the harness default reply timeout on purpose.
+  const h = makeHarness({ opts: { conversationTimeoutMs: 5000 } });
+  h.controller.onKey();
+  h.controller.onKey();
+  h.controller.onKey();
+  await tick(30);
+  fireExecution(h, "started", { executionID: "e2" });
+  addReply(h, { id: "a1" });
+  fireExecution(h, "succeeded", { executionID: "e1" });
+  await tick(40);
+  assert.equal(h.calls.speakFull, 0, "an older execution must not close this turn");
+  fireExecution(h, "succeeded", { executionID: "e2" });
+  await tick(40);
+  assert.equal(h.calls.speakFull, 1);
+  h.controller.stop("test");
+});
+
+test("a reply that lands after the execution event is still spoken", async () => {
+  // These turns outlive the harness default reply timeout on purpose.
+  const h = makeHarness({ opts: { conversationTimeoutMs: 5000 } });
+  h.controller.onKey();
+  h.controller.onKey();
+  h.controller.onKey();
+  await tick(30);
+  // The execution ends a beat before the message cache catches up.
+  fireExecution(h, "started");
+  await tick(5);
+  fireExecution(h, "succeeded");
+  await tick(10);
+  addReply(h, { id: "a1" });
+  await tick(150);
+  assert.equal(h.calls.speakFull, 1);
   h.controller.stop("test");
 });

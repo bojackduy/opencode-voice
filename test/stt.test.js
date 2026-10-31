@@ -37,6 +37,7 @@ import {
   showProcessingToast,
   showRecordingToast,
   showStreamingToast,
+  streamAutoEndRoute,
   transcribeApiFile,
   transcribeFileLocal,
   updateProcessingToast,
@@ -354,5 +355,67 @@ test("stream waveform maps the PCM tail to flat silence and high speech bars", (
   assert.ok(
     levels.slice(8).every((level) => level === 0),
     `silent columns stay flat: ${levels}`,
+  );
+});
+
+test("conversation mode owns silence auto-end, never the plain dictation submit", () => {
+  const onStop = () => {};
+  // Auto-end on at turn start: conversation path.
+  assert.equal(
+    streamAutoEndRoute({
+      conversation: true,
+      conversationStopSec: 2.5,
+      conversationOnStopped: onStop,
+      previewAutoEnd: false,
+    }),
+    "conversation",
+  );
+  // Auto-end toggled on mid-recording from the preview toggle.
+  assert.equal(
+    streamAutoEndRoute({
+      conversation: true,
+      conversationStopSec: null,
+      conversationOnStopped: onStop,
+      previewAutoEnd: true,
+    }),
+    "conversation",
+  );
+  // Auto-end off: stay off instead of submitting as plain dictation.
+  assert.equal(
+    streamAutoEndRoute({
+      conversation: true,
+      conversationStopSec: null,
+      conversationOnStopped: onStop,
+      previewAutoEnd: false,
+    }),
+    "off",
+  );
+  // Conversation active without a callback: still never the plain path.
+  assert.equal(
+    streamAutoEndRoute({
+      conversation: true,
+      conversationStopSec: null,
+      conversationOnStopped: null,
+      previewAutoEnd: true,
+    }),
+    "off",
+  );
+  assert.equal(
+    streamAutoEndRoute({
+      conversation: false,
+      conversationStopSec: null,
+      conversationOnStopped: null,
+      previewAutoEnd: true,
+    }),
+    "dictation",
+  );
+  assert.equal(
+    streamAutoEndRoute({
+      conversation: false,
+      conversationStopSec: null,
+      conversationOnStopped: null,
+      previewAutoEnd: false,
+    }),
+    "off",
   );
 });

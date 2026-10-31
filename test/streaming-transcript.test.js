@@ -272,6 +272,25 @@ test("final tail covering only the tail still joins instead of replacing", () =>
   assert.equal(done.stableText, "hello world this is a test of tails");
 });
 
+test("shorter full-window final keeps the live assembly the user saw", () => {
+  const t = createStabilityTracker();
+  t.update("mở file này ra và sửa cái lỗi trong phần xử lý âm thanh của plugin");
+  t.update("mở file này ra và sửa cái lỗi trong phần xử lý âm thanh của plugin ngay");
+  const before = t.getState();
+  const preview = [before.stableText, before.tentativeText].filter(Boolean).join(" ");
+  // Stop-tail re-decode of the whole utterance comes back shorter (model
+  // dropped words). The live preview was right; the final must not shrink it.
+  const s = t.update("mở file này ra và sửa lỗi trong phần âm thanh", {
+    absoluteStartMs: 0,
+    absoluteEndMs: 20000,
+    seq: 9,
+    final: true,
+  });
+  const done = t.commitTail();
+  assert.equal(s.tentativeText, before.tentativeText, "preview tail untouched");
+  assert.equal(done.stableText, preview, `submitted text equals preview, got: ${done.stableText}`);
+});
+
 test("collapsed final decode never wipes a good transcript", () => {
   const t = createStabilityTracker();
   t.update("hello world this is a fairly long dictation with many words in it");

@@ -586,6 +586,8 @@ test("v2 TTS smoke: speak command degrades honestly with no content", async () =
   speak.run();
   await tick();
   await tick();
+  // The lookup retries briefly while the message cache catches up.
+  await new Promise((r) => setTimeout(r, 600));
   // Fake sidecar/outcome: no messages exist, so no synthesis is attempted
   // and the user gets an honest warning instead of silence.
   assert.ok(
@@ -686,9 +688,11 @@ test("v2 TTS turn extraction finds assistant text in actual union shapes", async
     id: "m-asst-2",
     content: [{ type: "text", text: "Next step." }],
   });
+  // Only the message that finished the turn is the answer; earlier assistant
+  // messages of the same turn are mid-turn commentary and stay unspoken.
   assert.deepEqual(await getTurnAssistantText(adapted.api.client, adapted.api), {
     lastMessageID: "m-asst-2",
-    text: "Hello there. How can I help?\n\nNext step.",
+    text: "Next step.",
   });
   // A new user message terminates the previous assistant turn.
   fake.v2messages.push({ ...V2_USER_MSG, id: "m-user-2" });
@@ -791,14 +795,11 @@ for (const fastReply of [false, true]) {
       fire("session.idle", { sessionID: "ses_NEW" });
     }
     if (!fastReply) emitReply();
-    await sleep(50);
-    assert.ok(
-      spoken.some((s) => /Hello there/.test(s)),
-      `expected streamed sentence spoken, got ${JSON.stringify(spoken)}`,
-    );
-    await sleep(100);
-    // Streamed path flushes the tail; the full-turn fallback must NOT run.
-    assert.equal(turnSpoken, 0);
+    await sleep(200);
+    // Final-reply-only: the turn is voiced once, after the execution ends, and
+    // never sentence-by-sentence from live deltas.
+    assert.equal(turnSpoken, 1, `expected the finished reply spoken once, got ${turnSpoken}`);
+    assert.deepEqual(spoken, [], "no mid-turn sentences may be spoken");
     assert.ok(
       fake.toasts.some((t) => /to talk/.test(t?.message || "")),
       "expected paused resting toast after spoken reply",

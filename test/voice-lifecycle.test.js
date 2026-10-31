@@ -207,11 +207,12 @@ function makeConversationHarness() {
   return { api, handlers, disposes, calls, controller, count };
 }
 
-test("conversation dispose mid-wait removes reply-stream and reply-wait handlers", async () => {
+test("conversation dispose mid-wait removes reply-wait handlers", async () => {
   // Drive to "waiting": start (paused) -> key (recording) -> key (finish,
-  // transcribe, submit, wait). The wait holds 1 message.part.delta +
-  // session.idle/session.status/permission.asked/question.asked. Dispose
-  // must settle the wait (no later speak) and remove all 5.
+  // transcribe, submit, wait). The wait holds execution.started/succeeded/
+  // failed/interrupted + session.idle/session.status + permission.asked/
+  // question.asked. Dispose must settle the wait (no later speak) and remove
+  // all 8.
   const h = makeConversationHarness();
   h.controller.onKey(); // start -> paused
   h.controller.onKey(); // beginTurn -> recording
@@ -224,7 +225,7 @@ test("conversation dispose mid-wait removes reply-stream and reply-wait handlers
     (h.handlers.get("session.idle") || []).length > 0,
     "conversation never reached waiting",
   );
-  assert.equal(h.count(), 5, `waiting should hold 5 subscriptions, holds ${h.count()}`);
+  assert.equal(h.count(), 8, `waiting should hold 8 subscriptions, holds ${h.count()}`);
   for (const fn of h.disposes) await fn();
   assert.equal(h.count(), 0, "conversation wait/stream handlers survive dispose");
   // The settled wait resolves as "stopped": no reply is spoken after unload.
