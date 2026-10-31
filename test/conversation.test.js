@@ -83,6 +83,15 @@ function makeHarness({ transcribe = { text: "hello" }, opts = {} } = {}) {
     speakCalls: [],
     submitted: [],
     stopHint: undefined,
+    phases: [],
+    actions: null,
+    cancelStreaming: 0,
+  };
+  // The status line is the only thing the user sees after a key press, so the
+  // phase and the button set it renders are part of the observable behavior.
+  api.setConvPhase = (p) => calls.phases.push(p);
+  api.setConvActions = (a) => {
+    calls.actions = a;
   };
   let speakGate = null;
   let speakWordGate = null;
@@ -97,6 +106,9 @@ function makeHarness({ transcribe = { text: "hello" }, opts = {} } = {}) {
       calls.stopHint = hint;
     },
     cancel: () => {},
+    cancelStreaming: () => {
+      calls.cancelStreaming += 1;
+    },
     discard: () => {},
     transcribeTurn: () =>
       transcribe && typeof transcribe.then === "function"
@@ -421,9 +433,27 @@ test("tts stop key pauses speaking, ignored when inactive", async () => {
   await tick(20);
   assert.equal(h.controller.onTtsStop(), true);
   assert.equal(h.calls.ttsStop, 1);
+  // Pausing speech must move the status line off "Speaking", or its buttons
+  // keep offering stop/barge/pauseTts while the audio is already dead.
+  assert.equal(h.calls.phases.at(-1), "paused");
+  assert.deepEqual(Object.keys(h.calls.actions).sort(), ["end", "talk"]);
   release();
   await tick(20);
   assert.equal(h.calls.sttStart, 1);
+  h.controller.stop("test");
+});
+
+test("cancel key ends the live recording and holds the mode paused", async () => {
+  const h = makeHarness();
+  h.controller.onKey();
+  h.controller.onKey();
+  await tick(10);
+  assert.equal(h.calls.phases.at(-1), "recording");
+  h.controller.onKey("cancel");
+  assert.equal(h.calls.cancelStreaming, 1, "the streaming capture must be cancelled");
+  assert.equal(h.calls.phases.at(-1), "paused");
+  assert.deepEqual(Object.keys(h.calls.actions).sort(), ["end", "talk"]);
+  assert.deepEqual(h.calls.submitted, [], "cancel never submits");
   h.controller.stop("test");
 });
 

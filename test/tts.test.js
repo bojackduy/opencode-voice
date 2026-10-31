@@ -4,6 +4,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  __setConversationTtsHooks,
   detectLang,
   groupSentencesByLang,
   isSpeakableSentence,
@@ -701,6 +702,56 @@ test("piper audio is buffered and played with an exact measured total", async ()
   assert.equal(state.exactTotal, true);
   assert.equal(state.cursorApproximate, true);
   assert.equal(state.status, "idle");
+});
+
+test("conversation mode hands pause and off to its loop instead of the player", () => {
+  const { command } = playerHost();
+  const hits = [];
+  __setConversationTtsHooks({
+    isActive: () => true,
+    onStopKey: () => {
+      hits.push("stop");
+      return true;
+    },
+  });
+  try {
+    // Pausing the player would stall the loop's reply wait, so the command
+    // must pause the conversation instead.
+    command("tts.pause").onSelect();
+    command("tts.mode").onSelect();
+    command("tts.mode").onSelect();
+    assert.deepEqual(hits, ["stop", "stop"]);
+  } finally {
+    __setConversationTtsHooks({ isActive: null, onStopKey: null });
+  }
+});
+
+test("manual read is refused while conversation speaks replies itself", async () => {
+  const { controller, host, command } = playerHost();
+  controller.setConversationActive(true);
+  await command("tts.speak-last").onSelect();
+  assert.ok(
+    host.toasts.some((t) =>
+      String(t?.message ?? t).includes("Conversation mode speaks replies automatically"),
+    ),
+    "the user must be told why the read did not start",
+  );
+});
+
+test("speak-past opens a selector over prior assistant replies", async () => {
+  const { host, command, replaced } = playerHost();
+  // Two assistant replies so the selector has something to choose between.
+  host.api.state.session.messages = () => [
+    { role: "user", id: "u1" },
+    { role: "assistant", id: "a1" },
+    { role: "user", id: "u2" },
+    { role: "assistant", id: "a2" },
+  ];
+  host.api.state.part = (id) => [{ type: "text", text: `reply ${id}` }];
+  await command("tts.speak-past").onSelect();
+  const dialog = replaced()();
+  assert.ok(dialog, "a dialog should open");
+  assert.equal(dialog.options.length, 2, "both assistant replies are offered");
 });
 
 test("pause freezes the cursor and resume continues it", async () => {

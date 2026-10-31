@@ -398,6 +398,54 @@ Options in `tui.json` (all under the plugin entry, next to `endpoint`):
 - `ttsChatterboxPython`: optional python binary for the sidecar. Defaults to
   `python3` on `PATH` - set it to the venv python above.
 
+### Remote audio backend (phone-audio-bridge)
+
+Use an external device (e.g. a phone over SSH) for mic capture and TTS
+playback instead of local sox/CoreAudio. Unset by default (existing sox
+behavior).
+
+```json
+{
+  "sttCaptureCmd": [
+    "ssh",
+    "-i",
+    "~/.ssh/phone_bridge",
+    "-p",
+    "8022",
+    "-o",
+    "StrictHostKeyChecking=no",
+    "-o",
+    "UserKnownHostsFile=/dev/null",
+    "u0_a368@localhost",
+    "$HOME/bin/capture.sh",
+    "16000"
+  ],
+  "ttsPlayCmd": [
+    "ssh",
+    "-i",
+    "~/.ssh/phone_bridge",
+    "-p",
+    "8022",
+    "-o",
+    "StrictHostKeyChecking=no",
+    "-o",
+    "UserKnownHostsFile=/dev/null",
+    "u0_a368@localhost",
+    "$HOME/bin/playback.sh",
+    "16000"
+  ],
+  "audioSampleRate": 16000
+}
+```
+
+- `sttCaptureCmd`: string[] — replaces sox capture; stdout must be raw PCM
+  (16-bit, mono, `audioSampleRate` Hz).
+- `ttsPlayCmd`: string[] — replaces sox `play`; receives raw PCM on stdin
+  (TTS audio is ffmpeg-converted first).
+- `audioSampleRate`: number (default 16000).
+- When `sttCaptureCmd` is set, `/stt-mic` reports `remote (configured)` and
+  local mic enumeration is skipped.
+
 Per-utterance Piper fallback: whenever Chatterbox cannot speak an utterance,
 that utterance goes to Piper with a warn log (one toast per outage, not per
 utterance; the next utterance retries Chatterbox). Cases: sidecar not
