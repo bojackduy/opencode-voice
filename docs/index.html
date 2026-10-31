@@ -1103,7 +1103,6 @@
         gsap.registerPlugin(ScrollTrigger);
         const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         if (!reduceMotion) {
-          // Hero entrance
           gsap.from(".hero h1", { y: 80, opacity: 0, duration: 1.2, ease: "power4.out" });
           gsap.from(".hero .lede", {
             y: 50,
@@ -1121,26 +1120,27 @@
           });
           gsap.from(".term", { x: 100, opacity: 0, duration: 1.2, delay: 0.3, ease: "power4.out" });
 
-          // Pinned hero parallax - elements move as you scroll
           ScrollTrigger.create({
             trigger: ".hero",
             start: "top top",
             end: "bottom top",
+            pin: true,
+            pinSpacing: false,
             scrub: 1,
             onUpdate: (self) => {
               const p = self.progress;
-              gsap.set(".hero h1", { y: p * -80, opacity: 1 - p * 0.4 });
-              gsap.set(".hero .lede", { y: p * -50, opacity: 1 - p * 0.5 });
-              gsap.set(".hero .cta-row", { y: p * -30, opacity: 1 - p * 0.6 });
-              gsap.set(".term", { y: p * 40, scale: 1 - p * 0.05 });
+              gsap.set(".hero h1", { y: p * -120, opacity: 1 - p * 0.5, scale: 1 - p * 0.05 });
+              gsap.set(".hero .lede", { y: p * -80, opacity: 1 - p * 0.6 });
+              gsap.set(".hero .cta-row", { y: p * -40, opacity: 1 - p * 0.7 });
+              gsap.set(".term", { y: p * 60, scale: 1 - p * 0.1, opacity: 1 - p * 0.3 });
             },
           });
 
-          // Problem section
           gsap.from(".problem-grid", {
             scrollTrigger: { trigger: ".problem-grid", start: "top 85%" },
-            y: 80,
+            y: 100,
             opacity: 0,
+            scale: 0.95,
             duration: 1,
             ease: "power3.out",
           });
@@ -1153,26 +1153,24 @@
             ease: "power3.out",
           });
 
-          // Bento cells - dramatic stagger
           gsap.from(".bento .cell", {
             scrollTrigger: { trigger: ".bento", start: "top 85%" },
             y: 80,
             opacity: 0,
-            scale: 0.95,
+            scale: 0.9,
             duration: 0.8,
             stagger: 0.08,
-            ease: "back.out(1.2)",
+            ease: "back.out(1.4)",
           });
 
-          // Section headings slide in
           document.querySelectorAll("section").forEach((sec) => {
             const heading = sec.querySelector("h2");
             if (heading) {
               gsap.from(heading, {
                 scrollTrigger: { trigger: sec, start: "top 80%" },
-                x: -60,
+                x: -80,
                 opacity: 0,
-                duration: 0.9,
+                duration: 1,
                 ease: "power3.out",
               });
             }
@@ -1180,9 +1178,9 @@
             if (lede) {
               gsap.from(lede, {
                 scrollTrigger: { trigger: sec, start: "top 80%" },
-                x: -40,
+                x: -50,
                 opacity: 0,
-                duration: 0.8,
+                duration: 0.9,
                 delay: 0.1,
                 ease: "power3.out",
               });
@@ -1191,53 +1189,49 @@
             if (label) {
               gsap.from(label, {
                 scrollTrigger: { trigger: sec, start: "top 80%" },
-                x: -20,
+                x: -30,
                 opacity: 0,
-                duration: 0.6,
+                duration: 0.7,
                 ease: "power3.out",
               });
             }
           });
 
-          // Demo section - scale in
           gsap.from("#demo .term", {
             scrollTrigger: { trigger: "#demo", start: "top 80%" },
-            scale: 0.9,
+            scale: 0.85,
             opacity: 0,
-            duration: 1,
+            duration: 1.2,
             ease: "power3.out",
           });
 
-          // Install section - slide from sides
           gsap.from(".install-grid .codeblock:first-child", {
             scrollTrigger: { trigger: "#install", start: "top 80%" },
-            x: -60,
+            x: -80,
             opacity: 0,
-            duration: 0.8,
+            duration: 0.9,
             ease: "power3.out",
           });
           gsap.from(".install-grid .codeblock:last-child", {
             scrollTrigger: { trigger: "#install", start: "top 80%" },
-            x: 60,
+            x: 80,
             opacity: 0,
-            duration: 0.8,
+            duration: 0.9,
             ease: "power3.out",
           });
 
-          // FAQ items stagger
           gsap.from("#faq details", {
             scrollTrigger: { trigger: "#faq", start: "top 80%" },
-            y: 30,
+            y: 40,
             opacity: 0,
-            duration: 0.5,
-            stagger: 0.08,
+            duration: 0.6,
+            stagger: 0.1,
             ease: "power3.out",
           });
 
-          // Parallax: terminal mockup floats
           gsap.to(".term", {
-            scrollTrigger: { trigger: ".hero", start: "top top", end: "bottom top", scrub: 1.5 },
-            y: 50,
+            scrollTrigger: { trigger: ".hero", start: "top top", end: "bottom top", scrub: 2 },
+            y: 60,
             ease: "none",
           });
         }
