@@ -93,7 +93,11 @@ test("play applies tempo and trim from rate and seek offset", () => {
   assert.ok(argv.includes("trim"), `trim missing: ${argv.join(" ")}`);
   // Regression: effects before the input make sox report "Not enough input
   // filenames" and exit instantly with no audio. Input ("-") must lead.
-  assert.deepEqual(argv.slice(0, 4), ["-q", "--buffer", "1024", "-"], `input must lead: ${argv.join(" ")}`);
+  assert.deepEqual(
+    argv.slice(0, 4),
+    ["-q", "--buffer", "1024", "-"],
+    `input must lead: ${argv.join(" ")}`,
+  );
   assert.ok(
     argv.indexOf("trim") > 1 && argv.indexOf("tempo") > 1,
     `effects must follow the input: ${argv.join(" ")}`,
