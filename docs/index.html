@@ -163,7 +163,26 @@
       .hero-visual {
         position: relative;
         width: 100%;
-        height: 400px;
+      }
+      .hero-demo {
+        background: var(--bg-2);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.6);
+      }
+      .hero-demo-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+      }
+      .hero-demo-bar .term-title {
+        margin-left: 8px;
+        font-size: 11px;
+        color: var(--muted);
       }
       .hero-ring {
         position: absolute;
@@ -886,41 +905,21 @@
             <div class="hero-float f2">🔊 speaking</div>
             <div class="hero-float f3">✓ transcribed</div>
             <div class="hero-float f4">🌐 bilingual</div>
-            <div class="term" role="img" aria-label="Terminal showing opencode-voice commands">
-              <div class="term-bar">
+            <div
+              class="hero-demo"
+              role="img"
+              aria-label="Demo video showing opencode-voice in action"
+            >
+              <div class="hero-demo-bar">
                 <span class="term-dot r"></span><span class="term-dot y"></span
                 ><span class="term-dot g"></span>
-                <span class="term-title">opencode — session</span>
+                <span class="term-title">opencode-voice — live demo</span>
               </div>
-              <div class="term-body">
-                <span class="line"
-                  ><span class="prompt">❯</span> <span class="cmd">/stt-record</span></span
-                >
-                <span class="line"><span class="out">● recording… waveform ▁▃▆█▆▃▁</span></span>
-                <span class="line"
-                  ><span class="out"> voice live · refactor the auth middleware</span></span
-                >
-                <span class="line"
-                  ><span class="out"> and add rate limiting [to the login]</span></span
-                >
-                <span class="line"
-                  ><span class="prompt">❯</span> <span class="cmd">/tts-speak</span></span
-                >
-                <span class="line"
-                  ><span class="out">🔊 [⏸] 0:07 / 0:42 ████… [-5s] [+5s] [1x]</span></span
-                >
-                <span class="line"
-                  ><span class="out"> "I refactored the auth middleware and added…"</span></span
-                >
-                <span class="line"
-                  ><span class="prompt">❯</span> <span class="cmd">/voice-conversation</span>
-                  <span class="caret"></span
-                ></span>
-              </div>
-              <div class="hero-waveform">
-                <span></span><span></span><span></span><span></span><span></span><span></span
-                ><span></span><span></span>
-              </div>
+              <img
+                src="assets/voice-demo-2.gif"
+                alt="opencode-voice demo: full voice workflow"
+                style="width: 100%; display: block"
+              />
             </div>
           </div>
         </div>
@@ -1389,7 +1388,13 @@
             delay: 0.6,
             ease: "power4.out",
           });
-          gsap.from(".term", { x: 100, opacity: 0, duration: 1.2, delay: 0.3, ease: "power4.out" });
+          gsap.from(".hero-demo", {
+            x: 100,
+            opacity: 0,
+            duration: 1.2,
+            delay: 0.3,
+            ease: "power4.out",
+          });
 
           const heroTl = gsap.timeline({
             scrollTrigger: {
@@ -1406,7 +1411,7 @@
             .to(".hero h1", { y: -120, opacity: 0.3, scale: 0.95, ease: "none" }, 0)
             .to(".hero .lede", { y: -80, opacity: 0.2, ease: "none" }, 0)
             .to(".hero .cta-row", { y: -40, opacity: 0.1, ease: "none" }, 0)
-            .to(".term", { y: 80, scale: 0.9, opacity: 0.4, ease: "none" }, 0);
+            .to(".hero-demo", { y: 80, scale: 0.9, opacity: 0.4, ease: "none" }, 0);
 
           gsap.from(".problem-grid", {
             scrollTrigger: { trigger: ".problem-grid", start: "top 85%" },
@@ -1521,7 +1526,7 @@
             ease: "power3.out",
           });
 
-          gsap.to(".term", {
+          gsap.to(".hero-demo", {
             scrollTrigger: { trigger: ".hero", start: "top top", end: "bottom top", scrub: 2 },
             y: 80,
             ease: "none",
