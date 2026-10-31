@@ -160,6 +160,148 @@
         position: relative;
         z-index: 1;
       }
+      .hero-visual {
+        position: relative;
+        width: 100%;
+        height: 400px;
+      }
+      .hero-ring {
+        position: absolute;
+        border: 2px solid var(--accent);
+        border-radius: 50%;
+        opacity: 0.15;
+        animation: ring-pulse 4s ease-in-out infinite;
+      }
+      .hero-ring.r1 {
+        width: 300px;
+        height: 300px;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+      }
+      .hero-ring.r2 {
+        width: 200px;
+        height: 200px;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        animation-delay: 1s;
+      }
+      .hero-ring.r3 {
+        width: 100px;
+        height: 100px;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        animation-delay: 2s;
+      }
+      @keyframes ring-pulse {
+        0%,
+        100% {
+          transform: translate(-50%, -50%) scale(1);
+          opacity: 0.15;
+        }
+        50% {
+          transform: translate(-50%, -50%) scale(1.1);
+          opacity: 0.3;
+        }
+      }
+      .hero-float {
+        position: absolute;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 8px 12px;
+        font-size: 11px;
+        color: var(--muted);
+        animation: float 6s ease-in-out infinite;
+      }
+      .hero-float.f1 {
+        top: 10%;
+        left: 5%;
+        animation-delay: 0s;
+      }
+      .hero-float.f2 {
+        top: 20%;
+        right: 5%;
+        animation-delay: 1.5s;
+      }
+      .hero-float.f3 {
+        bottom: 15%;
+        left: 10%;
+        animation-delay: 3s;
+      }
+      .hero-float.f4 {
+        bottom: 25%;
+        right: 8%;
+        animation-delay: 4.5s;
+      }
+      @keyframes float {
+        0%,
+        100% {
+          transform: translateY(0);
+        }
+        50% {
+          transform: translateY(-15px);
+        }
+      }
+      .hero-waveform {
+        position: absolute;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 3px;
+        align-items: flex-end;
+        height: 40px;
+      }
+      .hero-waveform span {
+        width: 4px;
+        background: var(--accent);
+        border-radius: 2px;
+        animation: wave-bar 1.2s ease-in-out infinite;
+      }
+      .hero-waveform span:nth-child(1) {
+        height: 15px;
+        animation-delay: 0s;
+      }
+      .hero-waveform span:nth-child(2) {
+        height: 25px;
+        animation-delay: 0.1s;
+      }
+      .hero-waveform span:nth-child(3) {
+        height: 35px;
+        animation-delay: 0.2s;
+      }
+      .hero-waveform span:nth-child(4) {
+        height: 20px;
+        animation-delay: 0.3s;
+      }
+      .hero-waveform span:nth-child(5) {
+        height: 30px;
+        animation-delay: 0.4s;
+      }
+      .hero-waveform span:nth-child(6) {
+        height: 12px;
+        animation-delay: 0.5s;
+      }
+      .hero-waveform span:nth-child(7) {
+        height: 28px;
+        animation-delay: 0.6s;
+      }
+      .hero-waveform span:nth-child(8) {
+        height: 18px;
+        animation-delay: 0.7s;
+      }
+      @keyframes wave-bar {
+        0%,
+        100% {
+          transform: scaleY(1);
+        }
+        50% {
+          transform: scaleY(0.4);
+        }
+      }
       .hero-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -736,36 +878,49 @@
               <span>no auto-send</span>
             </div>
           </div>
-          <div class="term" role="img" aria-label="Terminal showing opencode-voice commands">
-            <div class="term-bar">
-              <span class="term-dot r"></span><span class="term-dot y"></span
-              ><span class="term-dot g"></span>
-              <span class="term-title">opencode — session</span>
-            </div>
-            <div class="term-body">
-              <span class="line"
-                ><span class="prompt">❯</span> <span class="cmd">/stt-record</span></span
-              >
-              <span class="line"><span class="out">● recording… waveform ▁▃▆█▆▃▁</span></span>
-              <span class="line"
-                ><span class="out"> voice live · refactor the auth middleware</span></span
-              >
-              <span class="line"
-                ><span class="out"> and add rate limiting [to the login]</span></span
-              >
-              <span class="line"
-                ><span class="prompt">❯</span> <span class="cmd">/tts-speak</span></span
-              >
-              <span class="line"
-                ><span class="out">🔊 [⏸] 0:07 / 0:42 ████… [-5s] [+5s] [1x]</span></span
-              >
-              <span class="line"
-                ><span class="out"> "I refactored the auth middleware and added…"</span></span
-              >
-              <span class="line"
-                ><span class="prompt">❯</span> <span class="cmd">/voice-conversation</span>
-                <span class="caret"></span
-              ></span>
+          <div class="hero-visual">
+            <div class="hero-ring r1"></div>
+            <div class="hero-ring r2"></div>
+            <div class="hero-ring r3"></div>
+            <div class="hero-float f1">🎙 recording…</div>
+            <div class="hero-float f2">🔊 speaking</div>
+            <div class="hero-float f3">✓ transcribed</div>
+            <div class="hero-float f4">🌐 bilingual</div>
+            <div class="term" role="img" aria-label="Terminal showing opencode-voice commands">
+              <div class="term-bar">
+                <span class="term-dot r"></span><span class="term-dot y"></span
+                ><span class="term-dot g"></span>
+                <span class="term-title">opencode — session</span>
+              </div>
+              <div class="term-body">
+                <span class="line"
+                  ><span class="prompt">❯</span> <span class="cmd">/stt-record</span></span
+                >
+                <span class="line"><span class="out">● recording… waveform ▁▃▆█▆▃▁</span></span>
+                <span class="line"
+                  ><span class="out"> voice live · refactor the auth middleware</span></span
+                >
+                <span class="line"
+                  ><span class="out"> and add rate limiting [to the login]</span></span
+                >
+                <span class="line"
+                  ><span class="prompt">❯</span> <span class="cmd">/tts-speak</span></span
+                >
+                <span class="line"
+                  ><span class="out">🔊 [⏸] 0:07 / 0:42 ████… [-5s] [+5s] [1x]</span></span
+                >
+                <span class="line"
+                  ><span class="out"> "I refactored the auth middleware and added…"</span></span
+                >
+                <span class="line"
+                  ><span class="prompt">❯</span> <span class="cmd">/voice-conversation</span>
+                  <span class="caret"></span
+                ></span>
+              </div>
+              <div class="hero-waveform">
+                <span></span><span></span><span></span><span></span><span></span><span></span
+                ><span></span><span></span>
+              </div>
             </div>
           </div>
         </div>
