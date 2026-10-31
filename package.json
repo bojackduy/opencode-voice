@@ -57,10 +57,13 @@
     "prepack": "npm run check && npm test",
     "release:patch": "npm run check && npm test && npm version patch -m \"chore: release %s\" && git push fork master && git push fork $(git describe --tags --abbrev=0)",
     "release:minor": "npm run check && npm test && npm version minor -m \"chore: release %s\" && git push fork master && git push fork $(git describe --tags --abbrev=0)",
-    "release:major": "npm run check && npm test && npm version major -m \"chore: release %s\" && git push fork master && git push fork $(git describe --tags --abbrev=0)"
+    "release:major": "npm run check && npm test && npm version major -m \"chore: release %s\" && git push fork master && git push fork $(git describe --tags --abbrev=0)",
+    "deploy": "wrangler deploy",
+    "preview": "wrangler dev"
   },
   "devDependencies": {
     "oxfmt": "0.50.0",
-    "oxlint": "1.65.0"
+    "oxlint": "1.65.0",
+    "wrangler": "^4.156.0"
   }
 }
