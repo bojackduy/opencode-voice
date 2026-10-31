@@ -170,6 +170,7 @@
         position: sticky;
         top: 96px;
         align-self: start;
+        margin: 0;
       }
 
       .button {
@@ -194,8 +195,82 @@
         color: var(--ink);
       }
       .demo-shell {
+        position: sticky;
+        top: 96px;
+        align-self: start;
         background: #0b0e0c;
         overflow: hidden;
+      }
+      .demo-decoration {
+        position: absolute;
+        z-index: 1;
+        pointer-events: none;
+        color: var(--green);
+      }
+      .demo-decoration-ring {
+        top: 17%;
+        right: 8%;
+        width: 58px;
+        aspect-ratio: 1;
+        border: 1px solid currentColor;
+        border-radius: 50%;
+      }
+      .demo-decoration-ring::before,
+      .demo-decoration-ring::after {
+        content: "";
+        position: absolute;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+      .demo-decoration-ring::before {
+        top: 6px;
+        left: 6px;
+      }
+      .demo-decoration-ring::after {
+        right: 8px;
+        bottom: 3px;
+      }
+      .demo-decoration-diamond {
+        top: 57%;
+        left: 8%;
+        width: 25px;
+        aspect-ratio: 1;
+        border: 1px solid currentColor;
+        transform: rotate(45deg);
+      }
+      .demo-decoration-spark {
+        top: 39%;
+        right: 17%;
+        width: 14px;
+        height: 14px;
+      }
+      .demo-decoration-spark::before,
+      .demo-decoration-spark::after {
+        content: "";
+        position: absolute;
+        inset: 0 6px;
+        background: currentColor;
+      }
+      .demo-decoration-spark::after {
+        inset: 4px -1px;
+      }
+      @media (prefers-reduced-motion: no-preference) {
+        .demo-decoration-ring {
+          animation: demo-spin 12s linear infinite;
+        }
+        .demo-decoration-diamond {
+          animation: demo-spin 9s linear infinite reverse;
+        }
+        .demo-decoration-spark {
+          animation: demo-spin 7s linear infinite;
+        }
+        @keyframes demo-spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
       }
       .demo-head {
         display: flex;
@@ -732,6 +807,9 @@
             alt="Animated terminal capture: configure voice, dictate a prompt, receive an answer, and play speech."
             fetchpriority="high"
           />
+          <span class="demo-decoration demo-decoration-ring" aria-hidden="true"></span>
+          <span class="demo-decoration demo-decoration-diamond" aria-hidden="true"></span>
+          <span class="demo-decoration demo-decoration-spark" aria-hidden="true"></span>
           <figcaption class="demo-caption">
             <span>The real workflow, captured in the terminal.</span
             ><span class="demo-state" aria-live="polite">Dictate</span>
