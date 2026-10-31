@@ -1237,21 +1237,22 @@
           });
           gsap.from(".term", { x: 100, opacity: 0, duration: 1.2, delay: 0.3, ease: "power4.out" });
 
-          ScrollTrigger.create({
-            trigger: ".hero",
-            start: "top top",
-            end: "bottom top",
-            pin: true,
-            pinSpacing: false,
-            scrub: 1,
-            onUpdate: (self) => {
-              const p = self.progress;
-              gsap.set(".hero h1", { y: p * -120, opacity: 1 - p * 0.5, scale: 1 - p * 0.05 });
-              gsap.set(".hero .lede", { y: p * -80, opacity: 1 - p * 0.6 });
-              gsap.set(".hero .cta-row", { y: p * -40, opacity: 1 - p * 0.7 });
-              gsap.set(".term", { y: p * 60, scale: 1 - p * 0.1, opacity: 1 - p * 0.3 });
+          const heroTl = gsap.timeline({
+            scrollTrigger: {
+              trigger: ".hero",
+              start: "top top",
+              end: "+=100%",
+              pin: true,
+              pinSpacing: false,
+              scrub: 1,
+              anticipatePin: 1,
             },
           });
+          heroTl
+            .to(".hero h1", { y: -120, opacity: 0.3, scale: 0.95, ease: "none" }, 0)
+            .to(".hero .lede", { y: -80, opacity: 0.2, ease: "none" }, 0)
+            .to(".hero .cta-row", { y: -40, opacity: 0.1, ease: "none" }, 0)
+            .to(".term", { y: 80, scale: 0.9, opacity: 0.4, ease: "none" }, 0);
 
           gsap.from(".problem-grid", {
             scrollTrigger: { trigger: ".problem-grid", start: "top 85%" },
@@ -1314,6 +1315,21 @@
             }
           });
 
+          gsap.from(".compare-before", {
+            scrollTrigger: { trigger: "#compare", start: "top 80%" },
+            x: -80,
+            opacity: 0,
+            duration: 0.9,
+            ease: "power3.out",
+          });
+          gsap.from(".compare-after", {
+            scrollTrigger: { trigger: "#compare", start: "top 80%" },
+            x: 80,
+            opacity: 0,
+            duration: 0.9,
+            ease: "power3.out",
+          });
+
           gsap.from("#demo .term", {
             scrollTrigger: { trigger: "#demo", start: "top 80%" },
             scale: 0.85,
@@ -1348,7 +1364,7 @@
 
           gsap.to(".term", {
             scrollTrigger: { trigger: ".hero", start: "top top", end: "bottom top", scrub: 2 },
-            y: 60,
+            y: 80,
             ease: "none",
           });
         }
