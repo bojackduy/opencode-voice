@@ -102,6 +102,41 @@ function makeHarness({ transcribe = { text: "hello" }, opts = {} } = {}) {
       calls.sttStart += 1;
       return true;
     },
+    startTurn: ({ streaming, autoEnd, onStreamFinalize, onSilenceFinalize, onBusy } = {}) => {
+      if (streaming) {
+        if (typeof stt.setConversationStreamingFinalize === "function") {
+          stt.setConversationStreamingFinalize(autoEnd ? 2.5 : null, onStreamFinalize);
+        }
+        if (typeof stt.startStreaming === "function" && stt.startStreaming()) {
+          return { ok: true, streaming: true };
+        }
+        if (typeof stt.setConversationStreamingFinalize === "function") {
+          stt.setConversationStreamingFinalize(null, null);
+        }
+        if (autoEnd && typeof stt.setSilenceAutoFinalize === "function") {
+          stt.setSilenceAutoFinalize(2.5, onSilenceFinalize);
+        } else if (typeof stt.setSilenceAutoFinalize === "function") {
+          stt.setSilenceAutoFinalize(null, null);
+        }
+        const ok = stt.start();
+        if (!ok) {
+          if (typeof onBusy === "function") onBusy();
+          return { ok: false, streaming: false };
+        }
+        return { ok: true, streaming: false };
+      }
+      if (autoEnd && typeof stt.setSilenceAutoFinalize === "function") {
+        stt.setSilenceAutoFinalize(2.5, onSilenceFinalize);
+      } else if (typeof stt.setSilenceAutoFinalize === "function") {
+        stt.setSilenceAutoFinalize(null, null);
+      }
+      const ok = stt.start();
+      if (!ok) {
+        if (typeof onBusy === "function") onBusy();
+        return { ok: false, streaming: false };
+      }
+      return { ok: true, streaming: false };
+    },
     setStopHint: (hint) => {
       calls.stopHint = hint;
     },

@@ -739,6 +739,19 @@ for (const fastReply of [false, true]) {
       cancel: () => {
         recording = false;
       },
+      startTurn: ({ autoEnd, onSilenceFinalize, onBusy } = {}) => {
+        if (autoEnd && typeof stt.setSilenceAutoFinalize === "function") {
+          stt.setSilenceAutoFinalize(2.5, onSilenceFinalize);
+        } else if (typeof stt.setSilenceAutoFinalize === "function") {
+          stt.setSilenceAutoFinalize(null, null);
+        }
+        const ok = stt.start();
+        if (!ok) {
+          if (typeof onBusy === "function") onBusy();
+          return { ok: false, streaming: false };
+        }
+        return { ok: true, streaming: false };
+      },
     };
     const tts = {
       speak: async (sentence) => void spoken.push(sentence),

@@ -15,6 +15,9 @@ import {
   summarizeMarkdownTable,
   summarizeMermaidForSpeech,
 } from "../lib/tts.js";
+import { toLoadArg, measureAudioSec } from "../lib/tts-engines/engine.js";
+import { createKokoroClient } from "../lib/kokoro-server.js";
+import { pcmToWav } from "../lib/tts-player.js";
 
 test("cleans markdown for speech", () => {
   assert.equal(localSpeechCleanup("Hello **world**!"), "Hello world!");
@@ -1118,4 +1121,144 @@ test("rate command persists the chosen speed", () => {
   dialog.options.find((o) => o.value === "1.5").onSelect();
   assert.equal(host.kv.get("tts.rate"), 1.5);
   assert.ok(host.toasts.some((t) => t.message === "Playback speed: 1.5x"));
+});
+
+test("engine adapter normalizes PCM audio and measures its duration", () => {
+  const pcm = Buffer.alloc(22050 * 2);
+  const audio = { pcm, sampleRate: 22050, channels: 1, bits: 16 };
+  const sec = measureAudioSec(audio);
+  assert.ok(sec !== null && Math.abs(sec - 1) < 0.01);
+  const loadArg = toLoadArg(audio);
+  assert.equal(loadArg.sampleRate, 22050);
+  assert.equal(loadArg.channels, 1);
+  assert.equal(loadArg.bits, 16);
+  assert.ok(Buffer.isBuffer(loadArg.pcm));
+});
+
+test("engine adapter normalizes WAV audio and measures its duration", () => {
+  const pcm = Buffer.alloc(22050 * 2);
+  const wav = pcmToWav(pcm, { sampleRate: 22050, channels: 1, bits: 16 });
+  const audio = { wav };
+  const sec = measureAudioSec(audio);
+  assert.ok(sec !== null && Math.abs(sec - 1) < 0.01);
+  const loadArg = toLoadArg(audio);
+  assert.ok(Buffer.isBuffer(loadArg.wav));
+});
+
+test("kokoro sidecar adopts an already-running healthy sidecar instead of spawning", async () => {
+  const spawned = [];
+  const client = createKokoroClient({
+    deps: {
+      fetch: async (url) => {
+        const parsed = new URL(String(url));
+        if (parsed.pathname === "/health") return { ok: true, status: 200 };
+        return {
+          ok: true,
+          status: 200,
+          arrayBuffer: async () => new ArrayBuffer(8),
+        };
+      },
+      spawn: (...args) => {
+        spawned.push(args);
+        const { EventEmitter } = require("node:events");
+        const proc = new EventEmitter();
+        proc.pid = 9999;
+        proc.stderr = new EventEmitter();
+        proc.kill = () => {};
+        return proc;
+      },
+    },
+    readyTimeoutMs: 200,
+    readyPollMs: 20,
+  });
+  assert.equal(await client.start(), true, "existing sidecar is usable");
+  assert.equal(client.getPort(), 8130);
+  assert.equal(client.isRunning(), true);
+  assert.deepEqual(spawned, [], "must not spawn a second sidecar");
+  client.stop();
+  assert.equal(client.isRunning(), false);
+});
+
+function failingKokoro(message = "synthesis exploded") {
+  const calls = { start: 0, synthesize: [], stop: 0 };
+  return {
+    calls,
+    client: {
+      start: async () => {
+        calls.start += 1;
+        return true;
+      },
+      isRunning: () => true,
+      getLastError: () => ({ code: "SYNTH_TIMEOUT", message }),
+      synthesize: async (text, opts) => {
+        calls.synthesize.push({ text, ...opts });
+        return { ok: false, code: "SYNTH_TIMEOUT", message };
+      },
+      stop: () => {
+        calls.stop += 1;
+      },
+    },
+  };
+}
+
+function kokoroHost(host, opts, kokoro) {
+  const { controller } = registerTTS(
+    host.api,
+    host.kv,
+    async () => ({}),
+    undefined,
+    opts,
+    host.logger,
+    { createKokoroClient: () => kokoro.client },
+  );
+  return controller;
+}
+
+async function speakKokoroWithPathCleared(host, text, opts, kokoro) {
+  const controller = kokoroHost(host, opts, kokoro);
+  const realPath = process.env.PATH;
+  process.env.PATH = "";
+  try {
+    return await controller.speak(text);
+  } finally {
+    process.env.PATH = realPath;
+  }
+}
+
+test("a failed kokoro synthesis falls back to Piper instead of going silent", async () => {
+  const host = fakeTtsHost();
+  const k = failingKokoro();
+  await speakKokoroWithPathCleared(
+    host,
+    "Deploying now.",
+    { ttsEngine: "kokoro", ttsKokoroPython: "/fake/python" },
+    k,
+  );
+  assert.equal(k.calls.synthesize.length, 1);
+  assert.equal(piperMissed(host).length, 1, "the utterance is still spoken");
+  assert.ok(host.toasts.some((t) => /Kokoro synthesis failed.*using Piper/.test(t.message)));
+});
+
+test("/tts-kokoro-voice is registered once and persists the selected voice", () => {
+  const { host, commands, replaced } = playerHost();
+  const matches = commands.filter((c) => c.value === "tts.kokoro-voice");
+  assert.equal(matches.length, 1, "the kokoro voice command must appear exactly once");
+  matches[0].onSelect();
+  const dialog = replaced()();
+  assert.ok(Array.isArray(dialog.options));
+  assert.ok(dialog.options.length > 0, "voice option list is non-empty");
+  const voiceName = dialog.options[0].value;
+  dialog.options[0].onSelect();
+  assert.equal(host.kv.get("tts.kokoroVoice"), voiceName);
+});
+
+test("/tts-engine lists kokoro with label Kokoro", () => {
+  const { commands, replaced } = playerHost();
+  const cmd = commands.find((c) => c.value === "tts.engine");
+  assert.ok(cmd);
+  cmd.onSelect();
+  const dialog = replaced()();
+  const kokoroOpt = dialog.options.find((o) => o.value === "kokoro");
+  assert.ok(kokoroOpt, "kokoro must be offered");
+  assert.match(kokoroOpt.title, /^Kokoro/);
 });

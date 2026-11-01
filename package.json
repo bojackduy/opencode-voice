@@ -36,7 +36,8 @@
   "files": [
     "index.js",
     "tui.js",
-    "lib"
+    "lib",
+    "vendor"
   ],
   "type": "module",
   "main": "index.js",
