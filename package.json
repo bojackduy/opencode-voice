@@ -58,7 +58,8 @@
     "fmt": "npx oxfmt --check .",
     "fmt:fix": "npx oxfmt --write .",
     "test": "node --test",
-    "check": "npm run lint && npm run fmt",
+    "check": "npm run lint && npm run fmt && npm run typecheck",
+    "typecheck": "tsc --noEmit -p jsconfig.json",
     "prepack": "npm run check && npm test",
     "release:patch": "npm run check && npm test && npm version patch -m \"chore: release %s\" && git push fork master && git push fork $(git describe --tags --abbrev=0)",
     "release:minor": "npm run check && npm test && npm version minor -m \"chore: release %s\" && git push fork master && git push fork $(git describe --tags --abbrev=0)",
@@ -67,8 +68,10 @@
     "preview": "wrangler dev"
   },
   "devDependencies": {
+    "@types/node": "^26.6.6",
     "oxfmt": "0.50.0",
     "oxlint": "1.65.0",
+    "typescript": "^7.0.2",
     "wrangler": "^4.156.0"
   }
 }

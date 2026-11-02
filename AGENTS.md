@@ -32,6 +32,6 @@ RELEASE_PROCESS.md for release steps.
 ## Code style
 
 - **ESM only** - `import`/`export`, `"type": "module"` in package.json
-- **No build step** - no TypeScript, no bundler
+- **No build step** - no bundler. TypeScript is used only as a dev-time checker (`tsc --checkJs`), never as a build or emitted output
 - **Formatting** - enforced by oxfmt
 - **Linting** - enforced by oxlint
