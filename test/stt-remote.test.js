@@ -60,3 +60,28 @@ test("remote forget restores local mic + speaker + prior mode", () => {
   assert.equal(store.get("stt.mode"), "streaming");
   assert.ok(toasts.some((t) => /local/i.test(t)));
 });
+
+test("remote-host presets switch machine with one click", () => {
+  const { ctx, store, toasts } = fakeCtx({});
+  ctx.api.ui.DialogSelect = (props) => props;
+  const cmd = createCommands(ctx).find((c) => c.value === "stt.remote-host");
+  assert.ok(cmd, "stt.remote-host command exists");
+  let shown = null;
+  ctx.api.ui.dialog.replace = (node) => {
+    shown = node;
+  };
+  ctx.api.ui.dialog.clear = () => {};
+  ctx.api.ui.DialogSelect = (props) => props;
+  cmd.onSelect();
+  assert.ok(shown, "dialog opens");
+  const dialog = typeof shown === "function" ? shown() : shown;
+  assert.equal(dialog.options.length, 3);
+  const laptop = dialog.options.find((o) => o.value === "remote:laptop");
+  laptop.onSelect();
+  assert.equal(store.get("stt.remoteHost"), "bojack@100.67.7.5");
+  assert.equal(store.get("stt.remotePort"), 22);
+  assert.equal(store.get("stt.mic"), "remote");
+  assert.equal(store.get("tts.output"), "remote");
+  assert.equal(store.get("stt.mode"), "batch");
+  assert.ok(toasts.some((t) => /remote/i.test(t)));
+});

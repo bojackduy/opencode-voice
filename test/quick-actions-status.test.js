@@ -42,6 +42,7 @@ test("quick actions declare speak and speak-reply buttons", () => {
     [
       ["speak", "speak"],
       ["reply", "speakReply"],
+      ["correct", "correct"],
       ["auto", "toggleAutoSubmit"],
     ],
   );
@@ -164,5 +165,18 @@ test("setReader swaps live state without re-begin", async () => {
   rec = true;
   h.status.update();
   assert.ok(h.byContent("[ ■  Stop  ]"), "recording after update");
+  h.status.clear();
+});
+
+test("correct segment is always visible and dispatches", async () => {
+  const pressed = [];
+  const h = host({ correct: () => pressed.push("correct") });
+  await h.status.begin();
+  for (const c of h.claims) c.render();
+  const btn = h.nodes.find((n) => n.content === "[ ✎  Fix  ]");
+  assert.ok(btn, "fixed Correct button renders");
+  assert.equal(btn.fg, "#fbbf24");
+  btn.onMouseUp();
+  assert.deepEqual(pressed, ["correct"]);
   h.status.clear();
 });

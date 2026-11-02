@@ -279,3 +279,26 @@ test("toggleAutoSubmit warns it does not apply in conversation mode", () => {
   assert.equal(store.get("stt.autoSubmit"), true, "stored value still flips for later");
   assert.ok(toasts.some((t) => /conversation/i.test(t)), "warned it only affects dictation");
 });
+
+test("correct routes to the command in idle, refuses in conversation", () => {
+  const store = new Map();
+  const toasts = [];
+  const api = { ui: { toast: (t) => toasts.push(typeof t === "string" ? t : t?.message) } };
+  const kv = {
+    get: (k, fb) => (store.has(k) ? store.get(k) : fb),
+    set: (k, v) => void store.set(k, v),
+  };
+  let corrected = 0;
+  const idle = createVoiceActions({ kv, api, cmds: { correctCmd: () => void corrected++ } });
+  idle.correct();
+  assert.equal(corrected, 1);
+  const conv = createVoiceActions({
+    kv,
+    api,
+    conversation: { isActive: () => true, getPhase: () => "paused" },
+    cmds: { correctCmd: () => void corrected++ },
+  });
+  conv.correct();
+  assert.equal(corrected, 1, "conversation mode must not trigger correction");
+  assert.ok(toasts.some((t) => /dictation/i.test(t)));
+});
