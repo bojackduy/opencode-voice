@@ -103,7 +103,7 @@ test("enhanceWavFile is async and never blocks on spawnSync", async () => {
 
 test("enhanceWavFile module uses async spawn only", () => {
   const src = fs.readFileSync(
-    path.join(import.meta.dirname, "..", "lib", "audio-enhance.js"),
+    path.join(import.meta.dirname, "..", "lib", "stt", "audio-enhance.js"),
     "utf-8",
   );
   assert.doesNotMatch(src, /spawnSync/);
