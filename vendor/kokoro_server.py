@@ -152,10 +152,14 @@ class Handler(BaseHTTPRequestHandler):
 def preload():
     try:
         load_model()
-    except Exception as err:
+    except BaseException as err:
+        # BaseException on purpose: a runtime dependency fetcher that calls
+        # sys.exit (e.g. a missing spacy model trying to pip-install itself)
+        # would otherwise kill this thread silently and leave /health on
+        # "loading" forever while clients poll the full ready timeout.
         STATE["phase"] = "failed"
-        STATE["error"] = str(err)
-        log("model load FAILED: %s" % err)
+        STATE["error"] = "%s: %s" % (type(err).__name__, err)
+        log("model load FAILED: %s: %s" % (type(err).__name__, err))
         traceback.print_exc(file=sys.stderr)
 
 

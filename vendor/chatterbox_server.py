@@ -369,13 +369,16 @@ def preload(variant):
                 STATE["languages"] = []
         STATE["phase"] = "ready"
         STATE["error"] = None
-    except Exception as err:
+    except BaseException as err:
         # Stay up on 503 with the reason: a live /health that explains the
         # failure is far more useful to the plugin (and to the user reading
         # logs) than a dead port it can only report as "unavailable".
+        # BaseException on purpose: a sys.exit from a runtime fetcher must
+        # surface here, not strand /health on "loading" (Kokoro did exactly
+        # that when its spacy model was missing).
         STATE["phase"] = "failed"
-        STATE["error"] = str(err)
-        log("model load FAILED: %s" % err)
+        STATE["error"] = "%s: %s" % (type(err).__name__, err)
+        log("model load FAILED: %s: %s" % (type(err).__name__, err))
         traceback.print_exc(file=sys.stderr)
 
 
