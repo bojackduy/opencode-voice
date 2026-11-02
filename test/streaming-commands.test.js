@@ -91,7 +91,7 @@ test("shared rendezvous unifies streaming and live-notes on one lease", () => {
 
 test("live-notes uses the shared rendezvous (no private client)", () => {
   const src = fs.readFileSync(
-    path.join(import.meta.dirname, "..", "lib", "live-notes.js"),
+    path.join(import.meta.dirname, "..", "lib", "voice", "live-notes.js"),
     "utf-8",
   );
   assert.match(src, /acquireSharedWhisperServer/);
