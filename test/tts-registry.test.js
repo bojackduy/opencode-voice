@@ -178,3 +178,66 @@ test("kokoro /health 503 with a failed phase fails fast instead of polling", asy
   assert.match(client.getLastError()?.message || "", /no module named kokoro/);
   assert.ok(healthCalls < 10, `polled ${healthCalls} times`);
 });
+
+test("vieneu: 429 busy retries once after reset, then succeeds", async () => {
+  const { createVieneuEngine } = await import("../lib/tts-engines/vieneu.js");
+  const calls = { synthesize: 0, dispose: 0, reset: 0, ensure: 0 };
+  const busy = () => ({
+    ok: false,
+    code: "BAD_STATUS",
+    message: '{"message":"server busy: timed out waiting for a stream slot","code":429}',
+  });
+  const engine = createVieneuEngine({
+    opts: {},
+    kv: { get: (k, f) => f, set: () => {} },
+    logger: { log: () => {} },
+    toast: () => {},
+    deps: {
+      ensureVieneuReady: async () => {
+        calls.ensure += 1;
+        return true;
+      },
+      getVieneuClient: () => ({
+        synthesize: async () => {
+          calls.synthesize += 1;
+          return calls.synthesize === 1 ? busy() : { ok: true, wav: Buffer.from("RIFFwav") };
+        },
+      }),
+      disposeVieneu: () => {
+        calls.dispose += 1;
+      },
+      resetVieneuClient: () => {
+        calls.reset += 1;
+      },
+    },
+  });
+  const result = await engine.synthesize("xin chào", { lang: "vi" });
+  assert.equal(result.ok, true);
+  assert.equal(calls.synthesize, 2, "one retry after the busy response");
+  assert.equal(calls.reset, 1);
+});
+
+test("vieneu: persistent 429 fails over instead of retrying forever", async () => {
+  const { createVieneuEngine } = await import("../lib/tts-engines/vieneu.js");
+  let n = 0;
+  const engine = createVieneuEngine({
+    opts: {},
+    kv: { get: (k, f) => f, set: () => {} },
+    logger: { log: () => {} },
+    toast: () => {},
+    deps: {
+      ensureVieneuReady: async () => true,
+      getVieneuClient: () => ({
+        synthesize: async () => {
+          n += 1;
+          return { ok: false, code: "BAD_STATUS", message: "server busy: stream slot 429" };
+        },
+      }),
+      disposeVieneu: () => {},
+      resetVieneuClient: () => {},
+    },
+  });
+  const result = await engine.synthesize("xin chào", { lang: "vi" });
+  assert.equal(result.ok, false);
+  assert.equal(n, 2, "exactly one retry, then give up to the fallback");
+});
