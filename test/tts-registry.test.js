@@ -147,3 +147,34 @@ test("registry: Vietnamese routes to Piper on Kokoro", () => {
   assert.equal(r.reason, "unsupported-language");
   assert.equal(r.fallback, true);
 });
+
+test("kokoro /health 503 with a failed phase fails fast instead of polling", async () => {
+  const { createKokoroClient } = await import("../lib/kokoro-server.js");
+  let healthCalls = 0;
+  const client = createKokoroClient({
+    python: "/fake/python",
+    readyTimeoutMs: 60000,
+    readyPollMs: 10,
+    deps: {
+      spawn: () => ({ pid: 1, stderr: { on() {} }, kill() {}, on() {} }),
+      fetch: async (url) => {
+        const path = new URL(String(url)).pathname;
+        if (path === "/health") {
+          healthCalls += 1;
+          return {
+            ok: false,
+            status: 503,
+            json: async () => ({ ok: false, status: "failed", error: "no module named kokoro" }),
+          };
+        }
+        return { ok: false, status: 503, json: async () => ({}) };
+      },
+    },
+  });
+  const started = Date.now();
+  assert.equal(await client.start(), false);
+  assert.ok(Date.now() - started < 5000, "must not poll for the full ready timeout");
+  assert.equal(client.getLastError()?.code, "MODEL_LOAD_FAILED");
+  assert.match(client.getLastError()?.message || "", /no module named kokoro/);
+  assert.ok(healthCalls < 10, `polled ${healthCalls} times`);
+});
