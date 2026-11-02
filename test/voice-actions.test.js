@@ -35,8 +35,22 @@ function makeTts() {
 
 test("mode() reports conversation when active", () => {
   const { api, kv, toasts } = makeCtx();
-  const conv = { isActive: () => true, getPhase: () => "paused", onKey: () => {}, onTtsStop: () => false, stop: () => {} };
-  const actions = createVoiceActions({ stt: makeStt(), tts: makeTts(), conversation: conv, liveNotes: { isActive: () => false }, kv, api, cmds: {} });
+  const conv = {
+    isActive: () => true,
+    getPhase: () => "paused",
+    onKey: () => {},
+    onTtsStop: () => false,
+    stop: () => {},
+  };
+  const actions = createVoiceActions({
+    stt: makeStt(),
+    tts: makeTts(),
+    conversation: conv,
+    liveNotes: { isActive: () => false },
+    kv,
+    api,
+    cmds: {},
+  });
   assert.equal(actions.mode(), "conversation");
 });
 
@@ -44,20 +58,44 @@ test("mode() reports notes when live notes active", () => {
   const { api, kv } = makeCtx();
   const conv = { isActive: () => false };
   const notes = { isActive: () => true };
-  const actions = createVoiceActions({ stt: makeStt(), tts: makeTts(), conversation: conv, liveNotes: notes, kv, api, cmds: {} });
+  const actions = createVoiceActions({
+    stt: makeStt(),
+    tts: makeTts(),
+    conversation: conv,
+    liveNotes: notes,
+    kv,
+    api,
+    cmds: {},
+  });
   assert.equal(actions.mode(), "notes");
 });
 
 test("mode() reports idle otherwise", () => {
   const { api, kv } = makeCtx();
-  const actions = createVoiceActions({ stt: makeStt(), tts: makeTts(), conversation: { isActive: () => false }, liveNotes: { isActive: () => false }, kv, api, cmds: {} });
+  const actions = createVoiceActions({
+    stt: makeStt(),
+    tts: makeTts(),
+    conversation: { isActive: () => false },
+    liveNotes: { isActive: () => false },
+    kv,
+    api,
+    cmds: {},
+  });
   assert.equal(actions.mode(), "idle");
 });
 
 test("toggleSpeak in idle calls recordCmd", () => {
   const { api, kv } = makeCtx();
   const calls = [];
-  const actions = createVoiceActions({ stt: makeStt(), tts: makeTts(), conversation: { isActive: () => false }, liveNotes: { isActive: () => false }, kv, api, cmds: { recordCmd: () => calls.push("record") } });
+  const actions = createVoiceActions({
+    stt: makeStt(),
+    tts: makeTts(),
+    conversation: { isActive: () => false },
+    liveNotes: { isActive: () => false },
+    kv,
+    api,
+    cmds: { recordCmd: () => calls.push("record") },
+  });
   actions.toggleSpeak();
   assert.deepEqual(calls, ["record"]);
 });
@@ -66,14 +104,30 @@ test("toggleSpeak in conversation delegates to onKey(record)", () => {
   const { api, kv } = makeCtx();
   const calls = [];
   const conv = { isActive: () => true, onKey: (s) => calls.push(s) };
-  const actions = createVoiceActions({ stt: makeStt(), tts: makeTts(), conversation: conv, liveNotes: { isActive: () => false }, kv, api, cmds: {} });
+  const actions = createVoiceActions({
+    stt: makeStt(),
+    tts: makeTts(),
+    conversation: conv,
+    liveNotes: { isActive: () => false },
+    kv,
+    api,
+    cmds: {},
+  });
   actions.toggleSpeak();
   assert.deepEqual(calls, ["record"]);
 });
 
 test("toggleSpeak in notes toasts stop-notes", () => {
   const { api, kv, toasts } = makeCtx();
-  const actions = createVoiceActions({ stt: makeStt(), tts: makeTts(), conversation: { isActive: () => false }, liveNotes: { isActive: () => true }, kv, api, cmds: {} });
+  const actions = createVoiceActions({
+    stt: makeStt(),
+    tts: makeTts(),
+    conversation: { isActive: () => false },
+    liveNotes: { isActive: () => true },
+    kv,
+    api,
+    cmds: {},
+  });
   actions.toggleSpeak();
   assert.ok(toasts.some((t) => /stop live notes/i.test(t.message)));
 });
@@ -82,7 +136,15 @@ test("speakReply in conversation paused calls speakLastCmd", () => {
   const { api, kv } = makeCtx();
   const calls = [];
   const conv = { isActive: () => true, getPhase: () => "paused" };
-  const actions = createVoiceActions({ stt: makeStt(), tts: makeTts(), conversation: conv, liveNotes: { isActive: () => false }, kv, api, cmds: { speakLastCmd: () => calls.push("speakLast") } });
+  const actions = createVoiceActions({
+    stt: makeStt(),
+    tts: makeTts(),
+    conversation: conv,
+    liveNotes: { isActive: () => false },
+    kv,
+    api,
+    cmds: { speakLastCmd: () => calls.push("speakLast") },
+  });
   actions.speakReply();
   assert.deepEqual(calls, ["speakLast"]);
 });
@@ -90,7 +152,15 @@ test("speakReply in conversation paused calls speakLastCmd", () => {
 test("speakReply in conversation speaking toasts agent-holds-floor", () => {
   const { api, kv, toasts } = makeCtx();
   const conv = { isActive: () => true, getPhase: () => "speaking" };
-  const actions = createVoiceActions({ stt: makeStt(), tts: makeTts(), conversation: conv, liveNotes: { isActive: () => false }, kv, api, cmds: {} });
+  const actions = createVoiceActions({
+    stt: makeStt(),
+    tts: makeTts(),
+    conversation: conv,
+    liveNotes: { isActive: () => false },
+    kv,
+    api,
+    cmds: {},
+  });
   actions.speakReply();
   assert.ok(toasts.some((t) => /agent holds the floor/i.test(t.message)));
 });
@@ -98,7 +168,15 @@ test("speakReply in conversation speaking toasts agent-holds-floor", () => {
 test("speakReply in conversation recording toasts mic-is-yours", () => {
   const { api, kv, toasts } = makeCtx();
   const conv = { isActive: () => true, getPhase: () => "recording" };
-  const actions = createVoiceActions({ stt: makeStt(), tts: makeTts(), conversation: conv, liveNotes: { isActive: () => false }, kv, api, cmds: {} });
+  const actions = createVoiceActions({
+    stt: makeStt(),
+    tts: makeTts(),
+    conversation: conv,
+    liveNotes: { isActive: () => false },
+    kv,
+    api,
+    cmds: {},
+  });
   actions.speakReply();
   assert.ok(toasts.some((t) => /mic is yours/i.test(t.message)));
 });
@@ -106,7 +184,15 @@ test("speakReply in conversation recording toasts mic-is-yours", () => {
 test("speakReply in idle calls speakLastCmd", () => {
   const { api, kv } = makeCtx();
   const calls = [];
-  const actions = createVoiceActions({ stt: makeStt(), tts: makeTts(), conversation: { isActive: () => false }, liveNotes: { isActive: () => false }, kv, api, cmds: { speakLastCmd: () => calls.push("speakLast") } });
+  const actions = createVoiceActions({
+    stt: makeStt(),
+    tts: makeTts(),
+    conversation: { isActive: () => false },
+    liveNotes: { isActive: () => false },
+    kv,
+    api,
+    cmds: { speakLastCmd: () => calls.push("speakLast") },
+  });
   actions.speakReply();
   assert.deepEqual(calls, ["speakLast"]);
 });
@@ -116,7 +202,15 @@ test("stopAll cancels TTS and conversation when active", async () => {
   const tts = makeTts();
   tts.isSpeaking = () => true;
   const conv = { isActive: () => true, stop: () => {} };
-  const actions = createVoiceActions({ stt: makeStt(), tts, conversation: conv, liveNotes: { isActive: () => false }, kv, api, cmds: {} });
+  const actions = createVoiceActions({
+    stt: makeStt(),
+    tts,
+    conversation: conv,
+    liveNotes: { isActive: () => false },
+    kv,
+    api,
+    cmds: {},
+  });
   const cancelled = await actions.stopAll();
   assert.ok(cancelled.includes("TTS"));
   assert.ok(cancelled.includes("conversation"));
@@ -128,10 +222,26 @@ test("getPhase is exposed on conversation controller", () => {
   // here we just assert the dispatcher reads it.
   const { api, kv } = makeCtx();
   const conv = { isActive: () => true, getPhase: () => "paused" };
-  const actions = createVoiceActions({ stt: makeStt(), tts: makeTts(), conversation: conv, liveNotes: { isActive: () => false }, kv, api, cmds: {} });
+  const actions = createVoiceActions({
+    stt: makeStt(),
+    tts: makeTts(),
+    conversation: conv,
+    liveNotes: { isActive: () => false },
+    kv,
+    api,
+    cmds: {},
+  });
   // speakReply paused path requires getPhase
   const calls = [];
-  const a2 = createVoiceActions({ stt: makeStt(), tts: makeTts(), conversation: conv, liveNotes: { isActive: () => false }, kv, api, cmds: { speakLastCmd: () => calls.push("x") } });
+  const a2 = createVoiceActions({
+    stt: makeStt(),
+    tts: makeTts(),
+    conversation: conv,
+    liveNotes: { isActive: () => false },
+    kv,
+    api,
+    cmds: { speakLastCmd: () => calls.push("x") },
+  });
   a2.speakReply();
   assert.deepEqual(calls, ["x"]);
 });
