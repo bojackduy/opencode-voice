@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createClient, resolveProviderConfig } from "../lib/llm-client.js";
+import { createClient, resolveProviderConfig } from "../lib/shared/llm-client.js";
 
 function createJsonResponse(status, data) {
   return {

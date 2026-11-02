@@ -16,7 +16,7 @@ import {
   summarizeMermaidForSpeech,
 } from "../lib/tts.js";
 import { toLoadArg, measureAudioSec } from "../lib/tts-engines/engine.js";
-import { createKokoroClient } from "../lib/kokoro-server.js";
+import { createKokoroClient } from "../lib/sidecars/kokoro-server.js";
 import { pcmToWav } from "../lib/tts-player.js";
 
 test("cleans markdown for speech", () => {

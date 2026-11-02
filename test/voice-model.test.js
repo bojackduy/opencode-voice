@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getVoiceProviderSelection, resolveVoiceProviderModel } from "../lib/voice-model.js";
+import { getVoiceProviderSelection, resolveVoiceProviderModel } from "../lib/shared/voice-model.js";
 
 function makeKv(store = {}) {
   return {

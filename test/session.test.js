@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getRecentConversationContext } from "../lib/session.js";
+import { getRecentConversationContext } from "../lib/shared/session.js";
 
 function makeApi(messages, partsByMessage) {
   return {

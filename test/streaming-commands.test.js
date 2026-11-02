@@ -10,7 +10,7 @@ import {
   resolveSttMode,
   resolveStreamTimings,
 } from "../lib/stt.js";
-import { acquireSharedWhisperServer } from "../lib/whisper-server.js";
+import { acquireSharedWhisperServer } from "../lib/sidecars/whisper-server.js";
 
 function memKv(initial = {}) {
   const store = new Map(Object.entries(initial));

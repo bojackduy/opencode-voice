@@ -5,7 +5,7 @@ import {
   canLiveReplace,
   createStreamingEditorAdapter,
   resolveStreamingSubmit,
-} from "../lib/streaming-editor.js";
+} from "../lib/stt/streaming/streaming-editor.js";
 
 // Fake live target with range APIs.
 function createLiveTarget({ text = "", selection = null, alive = true } = {}) {

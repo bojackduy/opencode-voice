@@ -12,7 +12,7 @@ import test from "node:test";
 
 import plugin from "../index.js";
 import { adaptV2Context, isV2Context } from "../lib/v2-compat.js";
-import { resolveVoiceProviderModel } from "../lib/voice-model.js";
+import { resolveVoiceProviderModel } from "../lib/shared/voice-model.js";
 
 // OBSERVED-v2: Context carries keymap.layer + ui.toast.show + storage;
 // a v1 api carries none of those paths.

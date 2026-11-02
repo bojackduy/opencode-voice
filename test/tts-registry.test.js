@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createEngineRegistry } from "../lib/tts-engines/registry.js";
-import { chatterboxSupportsLang } from "../lib/chatterbox-server.js";
+import { chatterboxSupportsLang } from "../lib/sidecars/chatterbox-server.js";
 
 function makeRegistry(opts = {}) {
   const kv = {
@@ -149,7 +149,7 @@ test("registry: Vietnamese routes to Piper on Kokoro", () => {
 });
 
 test("kokoro /health 503 with a failed phase fails fast instead of polling", async () => {
-  const { createKokoroClient } = await import("../lib/kokoro-server.js");
+  const { createKokoroClient } = await import("../lib/sidecars/kokoro-server.js");
   let healthCalls = 0;
   const client = createKokoroClient({
     python: "/fake/python",

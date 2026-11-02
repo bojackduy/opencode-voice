@@ -8,7 +8,7 @@ import {
   overlapJoinLength,
   splitWords,
   stripStablePrefix,
-} from "../lib/streaming-transcript.js";
+} from "../lib/stt/streaming/streaming-transcript.js";
 
 test("word prefix comparison is case/punctuation-insensitive", () => {
   assert.equal(commonWordPrefixLength(splitWords("Hello, world"), splitWords("hello world")), 2);

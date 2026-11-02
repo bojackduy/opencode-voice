@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test from "node:test";
 
-import { createVieneuClient } from "../lib/vieneu-server.js";
+import { createVieneuClient } from "../lib/sidecars/vieneu-server.js";
 
 function fakeChild({ exitCode = 1 } = {}) {
   const proc = new EventEmitter();

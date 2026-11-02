@@ -13,7 +13,7 @@ import {
   formatClockTime,
   mergeOverlapText,
   resolveUniqueBaseName,
-} from "../lib/notes-writer.js";
+} from "../lib/shared/notes-writer.js";
 
 test("formats clock time as HH:MM:SS, including past an hour", () => {
   assert.equal(formatClockTime(0), "00:00:00");

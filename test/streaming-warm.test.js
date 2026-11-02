@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import { createStreamingController } from "../lib/streaming-stt.js";
+import { createStreamingController } from "../lib/stt/streaming/streaming-stt.js";
 import { isStreamingServerFault, streamModelKey } from "../lib/stt.js";
 
 // Warm-lease follow-up: the whisper-server must stay loaded across

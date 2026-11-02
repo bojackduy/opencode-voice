@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createQuickActionsStatus, quickActionSegments } from "../lib/quick-actions-status.js";
+import {
+  createQuickActionsStatus,
+  quickActionSegments,
+} from "../lib/shared/quick-actions-status.js";
 
 function host(actions = {}) {
   const claims = [];

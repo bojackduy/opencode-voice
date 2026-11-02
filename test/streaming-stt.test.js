@@ -5,7 +5,7 @@ import {
   createRollingPcmBuffer,
   createServerTranscriber,
   createStreamingController,
-} from "../lib/streaming-stt.js";
+} from "../lib/stt/streaming/streaming-stt.js";
 
 // ---- Fakes: manual clock, scripted capture/transcriber, no processes ----
 

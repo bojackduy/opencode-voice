@@ -7,7 +7,7 @@ import {
   nextRate,
   progressBar,
   statusSegments,
-} from "../lib/tts-status.js";
+} from "../lib/shared/tts-status.js";
 
 function host(stateHolder, actions = {}) {
   const claims = [];

@@ -6,7 +6,7 @@ import {
   acquireSharedWhisperServer,
   buildWhisperServerArgs,
   createWhisperServerClient,
-} from "../lib/whisper-server.js";
+} from "../lib/sidecars/whisper-server.js";
 
 test("builds whisper-server args with model, language, host, port", () => {
   assert.deepEqual(

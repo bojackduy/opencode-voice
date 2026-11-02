@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createSoxRollingCapture } from "../lib/streaming-stt.js";
+import { createSoxRollingCapture } from "../lib/stt/streaming/streaming-stt.js";
 
 test("remote capture spawns the configured command", () => {
   const calls = [];

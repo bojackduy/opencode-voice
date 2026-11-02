@@ -5,7 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { createSoxRollingCapture, createStreamingController } from "../lib/streaming-stt.js";
+import {
+  createSoxRollingCapture,
+  createStreamingController,
+} from "../lib/stt/streaming/streaming-stt.js";
 
 const BYTES_PER_SECOND = 32000; // 16kHz mono 16-bit, must match STREAMING_DEFAULTS
 

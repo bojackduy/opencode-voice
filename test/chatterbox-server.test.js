@@ -7,7 +7,7 @@ import {
   chatterboxSupportsLang,
   createChatterboxClient,
   isChatterboxVariant,
-} from "../lib/chatterbox-server.js";
+} from "../lib/sidecars/chatterbox-server.js";
 
 test("builds sidecar args with host, port and variant", () => {
   assert.deepEqual(
