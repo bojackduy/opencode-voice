@@ -177,6 +177,9 @@ function makeConversationHarness() {
     setStopHint: () => {},
     cancel: () => {},
     discard: () => {},
+    setAutoEnd: () => {},
+    endTurn: () => {},
+    cancelTurnCleanup: () => {},
     startTurn: ({ autoEnd, onSilenceFinalize, onBusy } = {}) => {
       if (autoEnd && typeof stt.setSilenceAutoFinalize === "function") {
         stt.setSilenceAutoFinalize(2.5, onSilenceFinalize);

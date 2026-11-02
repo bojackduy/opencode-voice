@@ -145,6 +145,9 @@ function makeHarness({ transcribe = { text: "hello" }, opts = {} } = {}) {
       calls.cancelStreaming += 1;
     },
     discard: () => {},
+    setAutoEnd: () => {},
+    endTurn: () => {},
+    cancelTurnCleanup: () => {},
     transcribeTurn: () =>
       transcribe && typeof transcribe.then === "function"
         ? transcribe

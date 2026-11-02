@@ -739,6 +739,9 @@ for (const fastReply of [false, true]) {
       cancel: () => {
         recording = false;
       },
+      setAutoEnd: () => {},
+      endTurn: () => {},
+      cancelTurnCleanup: () => {},
       startTurn: ({ autoEnd, onSilenceFinalize, onBusy } = {}) => {
         if (autoEnd && typeof stt.setSilenceAutoFinalize === "function") {
           stt.setSilenceAutoFinalize(2.5, onSilenceFinalize);
