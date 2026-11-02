@@ -264,3 +264,18 @@ test("toggleAutoSubmit flips the stt.autoSubmit kv the reader checks", async () 
   toggleAutoSubmit();
   assert.equal(isAutoSubmit(), false);
 });
+
+test("toggleAutoSubmit warns it does not apply in conversation mode", () => {
+  const store = new Map();
+  const toasts = [];
+  const api = { ui: { toast: (t) => toasts.push(typeof t === "string" ? t : t?.message) } };
+  const kv = {
+    get: (k, fb) => (store.has(k) ? store.get(k) : fb),
+    set: (k, v) => void store.set(k, v),
+  };
+  const conv = { isActive: () => true, getPhase: () => "paused" };
+  const { toggleAutoSubmit } = createVoiceActions({ kv, api, conversation: conv });
+  toggleAutoSubmit();
+  assert.equal(store.get("stt.autoSubmit"), true, "stored value still flips for later");
+  assert.ok(toasts.some((t) => /conversation/i.test(t)), "warned it only affects dictation");
+});
