@@ -5,7 +5,7 @@ import {
   quickActionSegments,
 } from "../lib/shared/quick-actions-status.js";
 
-function host(actions = {}) {
+function host(actions = {}, readState) {
   const claims = [];
   const nodes = [];
   const toasts = [];
@@ -30,7 +30,7 @@ function host(actions = {}) {
     },
     onCleanup() {},
   };
-  const status = createQuickActionsStatus(ctx, actions, async () => runtime);
+  const status = createQuickActionsStatus(ctx, actions, async () => runtime, readState);
   const byContent = (text) => nodes.find((n) => n.content === text);
   return { ctx, claims, nodes, toasts, byContent, status };
 }
@@ -42,6 +42,7 @@ test("quick actions declare speak and speak-reply buttons", () => {
     [
       ["speak", "speak"],
       ["reply", "speakReply"],
+      ["auto", "toggleAutoSubmit"],
     ],
   );
 });
@@ -114,5 +115,32 @@ test("buttons carry distinct colors", async () => {
   const reply = h.nodes.find((n) => n.content === "[ ▶  Reply  ]");
   assert.ok(speak && reply);
   assert.ok(speak.fg && reply.fg && speak.fg !== reply.fg, "colors differ per button");
+  h.status.clear();
+});
+
+test("auto button reflects live state and dispatches toggle", async () => {
+  let on = false;
+  const pressed = [];
+  const h = host(
+    {
+      speak: () => {},
+      speakReply: () => {},
+      toggleAutoSubmit: () => {
+        pressed.push("auto");
+        on = !on;
+      },
+    },
+    () => ({ autoSubmit: on }),
+  );
+  await h.status.begin();
+  for (const c of h.claims) c.render();
+  const off = h.nodes.find((n) => n.content === "[ ⇄  Auto:off ]");
+  assert.ok(off, "auto toggle renders with off state");
+  off.onMouseUp();
+  assert.deepEqual(pressed, ["auto"]);
+  await new Promise((r) => setTimeout(r, 950));
+  h.status.update();
+  const onBtn = h.nodes.find((n) => n.content === "[ ⇄  Auto:on  ]");
+  assert.ok(onBtn, "label follows live state after update");
   h.status.clear();
 });

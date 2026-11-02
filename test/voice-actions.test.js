@@ -245,3 +245,22 @@ test("getPhase is exposed on conversation controller", () => {
   a2.speakReply();
   assert.deepEqual(calls, ["x"]);
 });
+
+test("toggleAutoSubmit flips the stt.autoSubmit kv the reader checks", async () => {
+  const store = new Map();
+  const toasts = [];
+  const api = { ui: { toast: (t) => toasts.push(t) } };
+  const kv = {
+    get: (k, fb) => (store.has(k) ? store.get(k) : fb),
+    set: (k, v) => void store.set(k, v),
+  };
+  const { toggleAutoSubmit, isAutoSubmit } = createVoiceActions({ kv, api });
+  assert.equal(isAutoSubmit(), false);
+  toggleAutoSubmit();
+  assert.equal(store.get("stt.autoSubmit"), true);
+  // Writer and reader must agree on the key (a past bug wrote stt.ctx.autoSubmit).
+  const { resolveSttAutoSubmit } = await import("../lib/stt.js");
+  assert.equal(resolveSttAutoSubmit({}, kv), true);
+  toggleAutoSubmit();
+  assert.equal(isAutoSubmit(), false);
+});
