@@ -17,7 +17,7 @@ import {
 } from "../lib/tts.js";
 import { toLoadArg, measureAudioSec } from "../lib/tts-engines/engine.js";
 import { createKokoroClient } from "../lib/sidecars/kokoro-server.js";
-import { pcmToWav } from "../lib/tts-player.js";
+import { pcmToWav } from "../lib/tts/player.js";
 
 test("cleans markdown for speech", () => {
   assert.equal(localSpeechCleanup("Hello **world**!"), "Hello world!");
@@ -581,7 +581,7 @@ test("the default engine never constructs a Chatterbox client", async () => {
 });
 
 // ---- Measured playback wiring: buffered synth -> exact total -> player ----
-// registerTTS drives lib/tts-player.js through injected seams (no audio):
+// registerTTS drives lib/tts/player.js through injected seams (no audio):
 // synthPiperToPcm replaces the piper spawn, resolveVoice replaces the
 // voice-file probe, playerHooks replaces the sox spawn/clock.
 
@@ -1293,4 +1293,41 @@ test("chunkLongGroups leaves small groups untouched", async () => {
     { lang: "vi", text: "Xin chào." },
   ];
   assert.deepEqual(chunkLongGroups(groups), groups);
+});
+
+test("repeating the same text reuses the cached asset instead of re-synthesizing", async () => {
+  let synthCalls = 0;
+  const { audio, controller, settleTwice } = playerHost({
+    synthPcm: async () => {
+      synthCalls += 1;
+      return monoPcm16(4);
+    },
+  });
+  for (let i = 0; i < 2; i++) {
+    const speaking = controller.speak("Hello there.");
+    await settleTwice();
+    audio.spawns.at(-1).emitClose(0);
+    await speaking;
+  }
+  assert.equal(synthCalls, 1, "second identical speak must hit the cache");
+});
+
+test("changing the voice invalidates the cached asset", async () => {
+  let synthCalls = 0;
+  const { audio, controller, host, settleTwice } = playerHost({
+    synthPcm: async () => {
+      synthCalls += 1;
+      return monoPcm16(4);
+    },
+  });
+  const speaking = controller.speak("Hello there.");
+  await settleTwice();
+  audio.spawns.at(-1).emitClose(0);
+  await speaking;
+  host.kv.set("tts.voice", "other-voice");
+  const speaking2 = controller.speak("Hello there.");
+  await settleTwice();
+  audio.spawns.at(-1).emitClose(0);
+  await speaking2;
+  assert.equal(synthCalls, 2, "voice change must re-synthesize");
 });

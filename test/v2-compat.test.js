@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import plugin from "../index.js";
-import { adaptV2Context, isV2Context } from "../lib/v2-compat.js";
+import { adaptV2Context, isV2Context } from "../lib/host/v2-compat.js";
 import { resolveVoiceProviderModel } from "../lib/shared/voice-model.js";
 
 // OBSERVED-v2: Context carries keymap.layer + ui.toast.show + storage;

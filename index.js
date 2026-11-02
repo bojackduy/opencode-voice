@@ -48,7 +48,7 @@
 //   <leader>v is free in opencode defaults (c/e/s/m/a/y/u/r/h etc. are taken) and mnemonic for voice.
 
 import { bootVoice } from "./lib/boot.js";
-import { adaptV2Context } from "./lib/v2-compat.js";
+import { adaptV2Context } from "./lib/host/v2-compat.js";
 
 // Dual-compat export: v1's loader reads `tui`, v2's reads `setup`
 // (`Plugin.define` is an identity wrapper, so a plain object carries both).

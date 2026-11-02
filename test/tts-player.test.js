@@ -6,7 +6,7 @@ import {
   createTtsPlayer,
   measurePcmDurationSec,
   measureWavDurationSec,
-} from "../lib/tts-player.js";
+} from "../lib/tts/player.js";
 
 // Fake clock + fake sox process. No real audio, no timers.
 function fakeAudio(initialNow = 0) {

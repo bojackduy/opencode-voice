@@ -7,7 +7,7 @@ import {
   createPcmChunker,
   pcm16Rms,
   wrapPcmAsWav,
-} from "../lib/audio-chunker.js";
+} from "../lib/stt/audio-chunker.js";
 
 const SAMPLE_RATE = 16000;
 

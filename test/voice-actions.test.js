@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createVoiceActions } from "../lib/voice-actions.js";
+import { createVoiceActions } from "../lib/voice/voice-actions.js";
 
 function makeCtx() {
   const toasts = [];

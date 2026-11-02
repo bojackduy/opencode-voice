@@ -11,8 +11,8 @@ import {
   enhanceWavFile,
   measurePcmStats,
   rmsToDb,
-} from "../lib/audio-enhance.js";
-import { wrapPcmAsWav } from "../lib/audio-chunker.js";
+} from "../lib/stt/audio-enhance.js";
+import { wrapPcmAsWav } from "../lib/stt/audio-chunker.js";
 
 const SAMPLE_RATE = 16000;
 

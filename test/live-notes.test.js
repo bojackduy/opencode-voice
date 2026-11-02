@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { registerLiveNotes } from "../lib/live-notes.js";
+import { registerLiveNotes } from "../lib/voice/live-notes.js";
 
 const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
 

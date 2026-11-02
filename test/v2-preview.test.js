@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createV2Preview } from "../lib/v2-preview.js";
-import { adaptV2Context } from "../lib/v2-compat.js";
+import { createV2Preview } from "../lib/host/v2-preview.js";
+import { adaptV2Context } from "../lib/host/v2-compat.js";
 import { registerSTT } from "../lib/stt.js";
 
 const flush = async () => {

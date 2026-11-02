@@ -10,5 +10,5 @@
 //
 // Single core: this re-exports the same default object (with both `tui` for
 // v1 and `setup` for v2) — each host reads its own key off the one module
-// instance. See index.js, lib/boot.js, lib/v2-compat.js.
+// instance. See index.js, lib/boot.js, lib/host/v2-compat.js.
 export { default } from "./index.js";
