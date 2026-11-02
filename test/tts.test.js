@@ -1262,3 +1262,23 @@ test("/tts-engine lists kokoro with label Kokoro", () => {
   assert.ok(kokoroOpt, "kokoro must be offered");
   assert.match(kokoroOpt.title, /^Kokoro/);
 });
+
+test("chunkLongGroups splits a 731-char reply into bounded same-lang chunks", async () => {
+  const { chunkLongGroups } = await import("../lib/tts.js");
+  const text = ("This is a natural sounding sentence for testing. ".repeat(15) + "Fin.").trim();
+  assert.ok(text.length > 700, "fixture is reply-sized");
+  const chunks = chunkLongGroups([{ lang: "en", text }]);
+  assert.ok(chunks.length > 1, "long span is split");
+  assert.ok(chunks.every((c) => c.lang === "en"), "language kept per chunk");
+  assert.ok(chunks.every((c) => c.text.length <= 480), "no chunk stalls a sidecar");
+  assert.equal(chunks.map((c) => c.text).join(" ").replace(/\s+/g, " "), text.replace(/\s+/g, " "));
+});
+
+test("chunkLongGroups leaves small groups untouched", async () => {
+  const { chunkLongGroups } = await import("../lib/tts.js");
+  const groups = [
+    { lang: "en", text: "Hello there." },
+    { lang: "vi", text: "Xin chào." },
+  ];
+  assert.deepEqual(chunkLongGroups(groups), groups);
+});
