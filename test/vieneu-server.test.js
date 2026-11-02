@@ -68,3 +68,31 @@ test("a port that answers without a healthy /health is still a conflict", async 
   assert.equal(client.getLastError()?.code, "MODEL_LOAD_FAILED");
   assert.equal(spawned.length, 1, "advanced to the next port and tried to start there");
 });
+
+test("object error bodies render as text, never [object Object]", async () => {
+  const client = createVieneuClient({
+    deps: {
+      fetch: async (url) => {
+        const parsed = new URL(String(url));
+        if (parsed.pathname === "/health") return { ok: true, status: 200 };
+        // OpenAI-compatible error shape: { error: { message, type } }.
+        return {
+          ok: false,
+          status: 400,
+          json: async () => ({ error: { message: "voice is required", type: "invalid_request" } }),
+        };
+      },
+      spawn: () => fakeChild(),
+    },
+    readyTimeoutMs: 200,
+    readyPollMs: 20,
+  });
+  assert.equal(await client.start(), true);
+  const result = await client.synthesize("xin chào");
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "BAD_STATUS");
+  assert.equal(typeof result.message, "string");
+  assert.ok(!result.message.includes("[object Object]"), "must not leak [object Object]");
+  assert.ok(result.message.includes("voice is required"), "keeps the server's message");
+  client.stop();
+});
