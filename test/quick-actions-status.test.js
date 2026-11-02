@@ -54,8 +54,8 @@ test("button clicks dispatch speak and speakReply", async () => {
   });
   await h.status.begin();
   for (const c of h.claims) c.render();
-  h.byContent("[mic speak]").onMouseUp();
-  h.byContent("[speak reply]").onMouseUp();
+  h.byContent("[ ●  Speak  ]").onMouseUp();
+  h.byContent("[ ▶  Reply  ]").onMouseUp();
   assert.deepEqual(pressed, ["speak", "speakReply"]);
   h.status.clear();
 });
@@ -64,7 +64,7 @@ test("unwired action toasts instead of failing silently", async () => {
   const h = host({});
   await h.status.begin();
   for (const c of h.claims) c.render();
-  h.byContent("[mic speak]").onMouseUp();
+  h.byContent("[ ●  Speak  ]").onMouseUp();
   assert.equal(h.toasts.length, 1);
   assert.match(h.toasts[0].message, /not wired yet/);
   h.status.clear();
@@ -78,7 +78,7 @@ test("throwing action toasts the error", async () => {
   });
   await h.status.begin();
   for (const c of h.claims) c.render();
-  h.byContent("[mic speak]").onMouseUp();
+  h.byContent("[ ●  Speak  ]").onMouseUp();
   assert.equal(h.toasts.length, 1);
   assert.match(h.toasts[0].message, /boom/);
   h.status.clear();
@@ -90,4 +90,29 @@ test("clear removes slot claims so re-setup leaves no dead buttons", async () =>
   assert.equal(h.claims.length, 2);
   h.status.clear();
   assert.equal(h.claims.length, 0);
+});
+
+test("rapid double-tap fires the action only once", async () => {
+  const pressed = [];
+  const h = host({ speak: () => pressed.push("speak") });
+  await h.status.begin();
+  for (const c of h.claims) c.render();
+  h.byContent("[ ●  Speak  ]").onMouseUp();
+  // Second tap lands inside the debounce window: swallowed, no double toggle.
+  const flashNode = h.nodes.find((n) => n.content === "[ ●  …  ]");
+  assert.ok(flashNode, "tap shows instant pressed state");
+  flashNode.onMouseUp();
+  assert.deepEqual(pressed, ["speak"]);
+  h.status.clear();
+});
+
+test("buttons carry distinct colors", async () => {
+  const h = host({ speak: () => {}, speakReply: () => {} });
+  await h.status.begin();
+  for (const c of h.claims) c.render();
+  const speak = h.nodes.find((n) => n.content === "[ ●  Speak  ]");
+  const reply = h.nodes.find((n) => n.content === "[ ▶  Reply  ]");
+  assert.ok(speak && reply);
+  assert.ok(speak.fg && reply.fg && speak.fg !== reply.fg, "colors differ per button");
+  h.status.clear();
 });
