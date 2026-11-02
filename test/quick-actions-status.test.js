@@ -144,3 +144,25 @@ test("auto button reflects live state and dispatches toggle", async () => {
   assert.ok(onBtn, "label follows live state after update");
   h.status.clear();
 });
+
+test("speak button turns into a red stop button while recording", async () => {
+  const h = host({ speak: () => {} }, () => ({ recording: true }));
+  await h.status.begin();
+  for (const c of h.claims) c.render();
+  const stop = h.nodes.find((n) => n.content === "[ ■  Stop  ]");
+  assert.ok(stop, "recording state renders stop");
+  assert.equal(stop.fg, "#f87171");
+  h.status.clear();
+});
+
+test("setReader swaps live state without re-begin", async () => {
+  let rec = false;
+  const h = host({ speak: () => {} }, () => ({ recording: rec }));
+  await h.status.begin();
+  for (const c of h.claims) c.render();
+  assert.ok(h.byContent("[ ●  Speak  ]"), "idle first");
+  rec = true;
+  h.status.update();
+  assert.ok(h.byContent("[ ■  Stop  ]"), "recording after update");
+  h.status.clear();
+});
