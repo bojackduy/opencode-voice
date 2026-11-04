@@ -157,14 +157,17 @@ test("speak button turns into a red stop button while recording", async () => {
 });
 
 test("setReader swaps live state without re-begin", async () => {
-  let rec = false;
-  const h = host({ speak: () => {} }, () => ({ recording: rec }));
+  const h = host({ speak: () => {} }, () => ({ recording: false }));
   await h.status.begin();
   for (const c of h.claims) c.render();
   assert.ok(h.byContent("[ ●  Speak  ]"), "idle first");
-  rec = true;
+  h.status.setReader(() => ({ recording: true, autoSubmit: true }));
   h.status.update();
   assert.ok(h.byContent("[ ■  Stop  ]"), "recording after update");
+  assert.ok(h.byContent("[ ⇄  Auto:on  ]"), "replacement reader controls auto state too");
+  h.status.setReader(() => ({ recording: false, autoSubmit: false }));
+  h.status.update();
+  assert.ok(h.byContent("[ ●  Speak  ]"), "stop clears recording state");
   h.status.clear();
 });
 
@@ -179,4 +182,13 @@ test("correct segment is always visible and dispatches", async () => {
   btn.onMouseUp();
   assert.deepEqual(pressed, ["correct"]);
   h.status.clear();
+});
+
+test("reply button turns red Stop while TTS is speaking", () => {
+  const segs = quickActionSegments({ speaking: true });
+  const reply = segs.find((s) => s.key === "reply");
+  assert.equal(reply.text, "[ ■  Stop  ]");
+  assert.equal(reply.fg, "#f87171");
+  const idle = quickActionSegments({});
+  assert.match(idle.find((s) => s.key === "reply").text, /Reply/);
 });

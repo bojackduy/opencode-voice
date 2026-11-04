@@ -9,10 +9,59 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { registerHooks } from "node:module";
 
 import plugin from "../index.js";
 import { adaptV2Context, isV2Context } from "../lib/host/v2-compat.js";
 import { resolveVoiceProviderModel } from "../lib/shared/voice-model.js";
+import { bootVoice } from "../lib/boot.js";
+import { __setStreamingActive } from "../lib/stt.js";
+
+test("boot reader reaches persistent buttons through the v2 adapter and command callbacks", async () => {
+  const runtimeURL = `data:text/javascript,${encodeURIComponent(`
+    export const nodes = [];
+    export const createElement = () => { const node = {}; nodes.push(node); return node; };
+    export const setProp = (node, key, value) => { node[key] = value; };
+    export const insertNode = () => {};
+    export const onCleanup = () => {};
+  `)}`;
+  const hooks = registerHooks({
+    resolve(specifier, context, next) {
+      if (specifier === "solid-js" || specifier === "@opentui/solid") {
+        return { url: runtimeURL, shortCircuit: true };
+      }
+      return next(specifier, context);
+    },
+  });
+  const fake = makeV2();
+  const { api, cleanup } = adaptV2Context(fake.ctx);
+  try {
+    await bootVoice(api, { ...fake.ctx.options, sttAutoSubmit: true });
+    await api.quickActions.begin();
+    fake.renderSlots();
+    const { nodes } = await import(runtimeURL);
+    const visible = (text) => nodes.some((node) => node.content === text);
+    assert.ok(visible("[ ⇄  Auto:on  ]"), "configured fallback reaches fixed Auto");
+    const command = fake.layers
+      .flatMap((layer) => layer.commands)
+      .find((entry) => entry.id === "stt.autosubmit");
+    assert.ok(command, "registered native command exists");
+    command.run();
+    api.quickActions.update();
+    assert.equal(api.kv.get("stt.autoSubmit"), false);
+    assert.ok(visible("[ ⇄  Auto:off ]"), "command and fixed button share flag");
+    __setStreamingActive(true);
+    api.quickActions.update();
+    assert.ok(visible("[ ■  Stop  ]"), "boot controller state reaches wrapper and slot");
+    __setStreamingActive(false);
+    api.quickActions.update();
+    assert.ok(visible("[ ●  Speak  ]"), "capture stop clears persistent Stop state");
+  } finally {
+    __setStreamingActive(false);
+    cleanup();
+    hooks.deregister();
+  }
+});
 
 // OBSERVED-v2: Context carries keymap.layer + ui.toast.show + storage;
 // a v1 api carries none of those paths.
@@ -825,3 +874,21 @@ for (const fastReply of [false, true]) {
     assert.equal(convo.controller.isActive(), false);
   });
 }
+
+test("state.session.currentID prefers the route, then the newest session", () => {
+  const fake = makeV2();
+  const { api, cleanup } = adaptV2Context(fake.ctx);
+  assert.equal(api.state.session.currentID(), "ses_V2");
+  // Home screen: no session route, still resolves a session for the header.
+  fake.ctx.ui.router.current = () => ({ type: "home" });
+  assert.equal(api.state.session.currentID(), "ses_V2");
+  cleanup();
+});
+
+test("state.session.currentID returns null when no session exists", () => {
+  const fake = makeV2({ sessions: [] });
+  const { api, cleanup } = adaptV2Context(fake.ctx);
+  fake.ctx.ui.router.current = () => ({ type: "home" });
+  assert.equal(api.state.session.currentID(), null);
+  cleanup();
+});

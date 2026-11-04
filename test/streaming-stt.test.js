@@ -955,3 +955,28 @@ test("a fresh start never resumes paused", async () => {
   assert.equal(h.controller.getState().paused, false, "reuse starts unpaused");
   await h.controller.dispose();
 });
+
+test("pause clicked during startup is honored once streaming begins", async () => {
+  let releaseReady;
+  const readyGate = new Promise((r) => {
+    releaseReady = r;
+  });
+  const h = createHarness({
+    script: [{ text: "hello" }],
+    readyResult: readyGate.then(() => ({ ready: true })),
+  });
+  assert.equal(h.controller.start(), true);
+  // Status is "starting" here: the click must be remembered, not rejected.
+  assert.equal(h.controller.getState().status, "starting");
+  assert.equal(h.controller.pause(), true);
+  assert.equal(h.controller.getState().paused, true);
+  releaseReady();
+  await flushAsync();
+  assert.equal(h.controller.getState().status, "streaming");
+  assert.equal(h.controller.getState().paused, true);
+  h.clock.fireNext();
+  await flushAsync();
+  assert.equal(h.tx.calls.length, 0, "no inference runs while startup-paused");
+  assert.equal(h.controller.resume(), true);
+  await h.controller.dispose();
+});

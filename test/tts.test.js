@@ -635,6 +635,7 @@ function playerHost({
   chatterbox = null,
   synthPcm = null,
   statusHooks = null,
+  completeImpl = async () => ({}),
 } = {}) {
   const host = fakeTtsHost();
   host.kv = mapKv({ "tts.mode": "on", ...kvInitial });
@@ -669,7 +670,7 @@ function playerHost({
   const { controller, commands } = registerTTS(
     host.api,
     host.kv,
-    async () => ({}),
+    completeImpl,
     undefined,
     opts,
     host.logger,
@@ -1330,4 +1331,17 @@ test("changing the voice invalidates the cached asset", async () => {
   audio.spawns.at(-1).emitClose(0);
   await speaking2;
   assert.equal(synthCalls, 2, "voice change must re-synthesize");
+});
+
+test("reply is busy the moment it is clicked, before normalization finishes", async () => {
+  let release;
+  const gate = new Promise((r) => {
+    release = r;
+  });
+  const { controller, command } = playerHost({ completeImpl: () => gate });
+  const started = command("tts.speak-last").onSelect();
+  await new Promise((r) => setImmediate(r));
+  assert.equal(controller.isSpeaking(), true, "red Stop must appear immediately");
+  release({ text: "Short reply." });
+  await started;
 });

@@ -305,11 +305,10 @@ test("resolves voice-selected provider to endpoint config", () => {
     options: { baseURL: "https://openrouter.ai/api/v1" },
   };
   const model = { id: "openai/gpt-4o-mini", api: { url: "https://openrouter.ai/api/v1" } };
-  assert.deepEqual(resolveProviderConfig(provider, model), {
-    endpoint: "https://openrouter.ai/api/v1",
-    model: "openai/gpt-4o-mini",
-    apiKeyEnv: "OPENROUTER_API_KEY",
-  });
+  const cfg = resolveProviderConfig(provider, model);
+  assert.equal(cfg.endpoint, "https://openrouter.ai/api/v1");
+  assert.equal(cfg.model, "openai/gpt-4o-mini");
+  assert.equal(cfg.apiKeyEnv, "OPENROUTER_API_KEY");
   assert.equal(resolveProviderConfig(null, model), null);
 });
 
@@ -321,11 +320,10 @@ test("prefers the upstream modelID when a v2 model carries both ids", () => {
     options: { baseURL: "https://p1.test/v1" },
   };
   const model = { id: "alias-id", modelID: "upstream-id", providerID: "p1" };
-  assert.deepEqual(resolveProviderConfig(provider, model), {
-    endpoint: "https://p1.test/v1",
-    model: "upstream-id",
-    apiKeyEnv: "P1_API_KEY",
-  });
+  const cfg = resolveProviderConfig(provider, model);
+  assert.equal(cfg.endpoint, "https://p1.test/v1");
+  assert.equal(cfg.model, "upstream-id");
+  assert.equal(cfg.apiKeyEnv, "P1_API_KEY");
 });
 
 test("falls back to model api url when provider has no baseURL", () => {
@@ -455,5 +453,91 @@ test("omits x-opencode-session header without session", async () => {
     assert.ok(!("x-opencode-session" in requests[0].options.headers));
   } finally {
     globalThis.fetch = previousFetch;
+  }
+});
+
+test("non-ok responses include the server reason snippet", async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 400,
+    async text() {
+      return JSON.stringify({ error: { message: "model does not support temperature", type: "invalid_request" } });
+    },
+  });
+  try {
+    const client = createClient({
+      endpoint: "https://example.test/v1",
+      model: "test-model",
+      retries: 0,
+    });
+    const result = await client.complete({ prompt: "Test" });
+    assert.equal(result.text, null);
+    assert.match(result.error, /LLM request failed \(400\)/);
+    assert.match(result.error, /does not support temperature/);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("non-ok responses without a body still return the status", async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => createJsonResponse(429, { error: "busy" });
+  const previousSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = (fn) => {
+    fn();
+    return 0;
+  };
+  try {
+    const client = createClient({
+      endpoint: "https://example.test/v1",
+      model: "test-model",
+      retries: 0,
+    });
+    const result = await client.complete({ prompt: "Test" });
+    assert.equal(result.text, null);
+    assert.match(result.error, /LLM request failed \(429\)/);
+  } finally {
+    globalThis.fetch = previousFetch;
+    globalThis.setTimeout = previousSetTimeout;
+  }
+});
+
+test("falls back to the console-stored provider key when no env key", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "authstore-"));
+  const prevHome = process.env.HOME;
+  process.env.HOME = dir;
+  fs.mkdirSync(path.join(dir, ".local", "share", "opencode"), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, ".local", "share", "opencode", "auth.json"),
+    JSON.stringify({ "opencode-go": { type: "api", key: "stored-secret" } }),
+  );
+  const previousFetch = globalThis.fetch;
+  const seen = [];
+  globalThis.fetch = async (url, options) => {
+    seen.push(options.headers);
+    return createJsonResponse(200, { choices: [{ message: { content: "ok" } }] });
+  };
+  try {
+    const { createClient: makeClient } = await import("../lib/shared/llm-client.js");
+    const client = makeClient(
+      {},
+      null,
+      () => undefined,
+      () => ({
+        provider: { id: "opencode-go", env: [], options: { baseURL: "https://go.test/v1" } },
+        model: { id: "m1", modelID: "m1" },
+      }),
+    );
+    const r = await client.complete({ prompt: "x" });
+    assert.equal(r.text, "ok");
+    assert.equal(seen[0].Authorization, "Bearer stored-secret");
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (prevHome === undefined) delete process.env.HOME;
+    else process.env.HOME = prevHome;
   }
 });

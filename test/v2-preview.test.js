@@ -412,3 +412,66 @@ test("v2 record key resumes a paused session instead of finalizing", async () =>
   h.adapted.cleanup();
   await flush();
 });
+
+test("streaming stop follows the global auto-submit flag, including a mid-stream flip", async () => {
+  const h = host();
+  const inserted = [];
+  const submitted = [];
+  h.ctx.renderer.currentFocusedRenderable = {
+    insertText: (text) => inserted.push(text),
+    submit: () => submitted.push(1),
+  };
+  const scheduled = new Map();
+  let id = 0;
+  const clock = {
+    setTimeout(fn) {
+      scheduled.set(++id, fn);
+      return id;
+    },
+    clearTimeout(key) {
+      scheduled.delete(key);
+    },
+  };
+  const capture = {
+    start() {},
+    snapshot: () => ({ wav: Buffer.from("snapshot"), durationMs: 1000 }),
+    stopFinal: async () => ({ wav: Buffer.from("final"), durationMs: 1000 }),
+    cancel: async () => {},
+    dispose: async () => {},
+  };
+  const transcriber = {
+    ensureReady: async () => ({ ready: true }),
+    transcribe: async () => ({ text: "spoken words here" }),
+    dispose() {},
+    describe: () => ({ modelPath: "fake", language: "en" }),
+  };
+  const stt = registerSTT(
+    h.adapted.api,
+    h.adapted.api.kv,
+    async () => {
+      throw new Error("No LLM in streaming");
+    },
+    {},
+    { sttMode: "streaming" },
+    { log() {} },
+    {
+      streamingControllerOpts: {
+        captureFactory: () => capture,
+        transcriberFactory: () => transcriber,
+        clock,
+      },
+    },
+  );
+  assert.equal(await stt.controller.startStreaming(), true);
+  await flush();
+  for (const c of h.claims) c.render();
+  // Flip the single global flag mid-stream, after the preview synced.
+  h.adapted.api.kv.set("stt.autoSubmit", true);
+  await stt.controller.finalizeStreaming();
+  await flush();
+  assert.equal(inserted.length, 1, "final text inserted once");
+  assert.equal(submitted.length, 1, "mid-stream Auto=on submits at delivery, not at start");
+  assert.equal(h.prompts.length, 0, "dictation never sends a prompt");
+  h.adapted.cleanup();
+  await flush();
+});
