@@ -450,3 +450,27 @@ test("cancel resumes a paused mic before killing it", async () => {
   await cap.dispose();
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test("ssh capture exit 255 names the connection, not SoX", async () => {
+  const dir = makeSpoolDir();
+  const proc = createFakeSox();
+  const errors = [];
+  const cap = createSoxRollingCapture({
+    windowMs: 10000,
+    // A remote captureCmd replaces sox; exit 255 is ssh's connection failure.
+    captureCmd: ["ssh", "-p", "8022", "u0_a368@127.0.0.1", "$HOME/bin/capture.sh", "16000"],
+    spawnFn: () => proc,
+    spoolDir: dir,
+    onError: (e) => errors.push(e),
+  });
+  cap.start();
+  pushSeconds(proc, 0, 1);
+  proc.stderr.emit("data", "ssh: connect to host 127.0.0.1 port 8022: Connection refused\n");
+  proc.emit("exit", 255, null);
+  proc.emit("close", 255);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0].message, /Capture command exited unexpectedly \(code=255/);
+  assert.match(errors[0].message, /Connection refused/);
+  assert.match(errors[0].message, /adb forward tcp:8022/);
+  await cap.dispose();
+});
