@@ -97,7 +97,13 @@ test("normalizeCorrection asks the LLM to merge original + correction", async ()
     calls.push(req);
     return { text: "fix this bug please" };
   };
-  const res = await normalizeCorrection(complete, "fit this bug please", "I mean fix not fit", null, null);
+  const res = await normalizeCorrection(
+    complete,
+    "fit this bug please",
+    "I mean fix not fit",
+    null,
+    null,
+  );
   assert.equal(res.text, "fix this bug please");
   assert.match(calls[0].system, /repair/i);
   assert.match(calls[0].prompt, /fit this bug/);
@@ -177,7 +183,6 @@ test("correction follows the composer language, not the fix language", async () 
 });
 
 test("correction merge: empty result logs distinctly and keeps original", async () => {
-
   const toasts = [];
   armCorrection();
   const off = snapLog();
@@ -187,7 +192,10 @@ test("correction merge: empty result logs distinctly and keeps original", async 
   });
   assert.deepEqual(r, { text: null, kept: true, reason: "empty" });
   assert.equal(isCorrecting(), false);
-  assert.ok(toasts.some((t) => /came back empty/i.test(t)), `toasts: ${JSON.stringify(toasts)}`);
+  assert.ok(
+    toasts.some((t) => /came back empty/i.test(t)),
+    `toasts: ${JSON.stringify(toasts)}`,
+  );
   assert.ok(
     readLogSince(off).includes("correction merge returned empty text"),
     "empty merge is logged distinctly",
@@ -204,8 +212,14 @@ test("correction merge: timeout result logs distinctly and keeps original", asyn
   });
   assert.deepEqual(r, { text: null, kept: true, reason: "timeout" });
   assert.equal(isCorrecting(), false);
-  assert.ok(toasts.some((t) => /timed out/i.test(t)), `toasts: ${JSON.stringify(toasts)}`);
-  assert.ok(readLogSince(off).includes("correction merge timeout:"), "timeout is logged distinctly");
+  assert.ok(
+    toasts.some((t) => /timed out/i.test(t)),
+    `toasts: ${JSON.stringify(toasts)}`,
+  );
+  assert.ok(
+    readLogSince(off).includes("correction merge timeout:"),
+    "timeout is logged distinctly",
+  );
 });
 
 test("correction merge: thrown error logs distinctly and keeps original", async () => {
@@ -267,7 +281,10 @@ test("correction pins the route session id so the gateway cannot 400", async () 
       calls.push(req);
       return { text: "help me fix this bug" };
     }),
-    api: { ui: { toast: () => {} }, route: { current: { name: "session", params: { sessionID: "ses_abc" } } } },
+    api: {
+      ui: { toast: () => {} },
+      route: { current: { name: "session", params: { sessionID: "ses_abc" } } },
+    },
   });
   assert.equal(r.kept === true || r.text === null || typeof r.text === "string", true);
   assert.equal(calls.length, 1);

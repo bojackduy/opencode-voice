@@ -1,12 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import {
-  createAudioCache,
-  cacheKey,
-  hashText,
-  audioBytes,
-} from "../lib/tts/cache.js";
+import { createAudioCache, cacheKey, hashText, audioBytes } from "../lib/tts/cache.js";
 
 const wav = (n) => Buffer.concat([Buffer.from("RIFFxxxxWAVE"), Buffer.alloc(n)]);
 

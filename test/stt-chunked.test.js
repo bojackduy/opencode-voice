@@ -36,9 +36,19 @@ test("silence windows parse from ffmpeg stderr", () => {
 });
 
 test("spans cut on silence middles and cap length", () => {
-  const spans = planChunkSpans(71, [{ start: 12.5, end: 13.1 }, { start: 40, end: 41.2 }], 30);
+  const spans = planChunkSpans(
+    71,
+    [
+      { start: 12.5, end: 13.1 },
+      { start: 40, end: 41.2 },
+    ],
+    30,
+  );
   assert.ok(spans.length >= 2 && spans.length <= 4, JSON.stringify(spans));
-  assert.ok(spans.slice(0, -1).every((s) => s.dur <= 30.01), JSON.stringify(spans));
+  assert.ok(
+    spans.slice(0, -1).every((s) => s.dur <= 30.01),
+    JSON.stringify(spans),
+  );
   const last = spans[spans.length - 1];
   assert.ok(last.dur <= 35, "tail preservation may slightly exceed the cap");
   assert.equal(spans[0].start, 0);

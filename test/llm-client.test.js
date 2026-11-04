@@ -462,7 +462,9 @@ test("non-ok responses include the server reason snippet", async () => {
     ok: false,
     status: 400,
     async text() {
-      return JSON.stringify({ error: { message: "model does not support temperature", type: "invalid_request" } });
+      return JSON.stringify({
+        error: { message: "model does not support temperature", type: "invalid_request" },
+      });
     },
   });
   try {

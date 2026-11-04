@@ -161,10 +161,9 @@ test("missing gipformer script fails fast without spawning", async () => {
 });
 
 test("kv script override wins over options", () => {
-  const cfg = getGipformerConfig(
-    mapKv({ "stt.gipformer.script": "/x/infer_onnx.py" }),
-    { sttGipformerScript: "/y/infer_onnx.py" },
-  );
+  const cfg = getGipformerConfig(mapKv({ "stt.gipformer.script": "/x/infer_onnx.py" }), {
+    sttGipformerScript: "/y/infer_onnx.py",
+  });
   assert.equal(cfg.script, "/x/infer_onnx.py");
 });
 
